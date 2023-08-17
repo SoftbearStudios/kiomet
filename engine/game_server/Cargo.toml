@@ -1,0 +1,65 @@
+[package]
+name = "game_server"
+workspace = ".."
+version = "0.1.0"
+edition = "2018"
+authors = ["Softbear, Inc."]
+license = "AGPL-3.0-or-later"
+
+[features]
+teams = []
+
+[dependencies]
+actix = "0.13"
+aho-corasick = "1"
+arrayvec = { version = "0.7", features = ["serde"] }
+async-trait = "0.1"
+atomic_refcell = "0.1"
+axum = { version = "0.6.20", features = ["headers", "ws"] }
+axum-server = { version = "0.5.1", features = ["tls-rustls"] }
+bytes = "1"
+common_util = { path = "../common_util" }
+constant_time_eq = "0.2"
+core_protocol = { path = "../core_protocol", features = ["server"] }
+csv = "1.1"
+db_ip = "0.3"
+engine_macros = { path = "../engine_macros" }
+env_logger = "0.9"
+futures = "0.3"
+heapless = "0.7"
+hyper = { version = "0", features = ["runtime"] }
+image = { version = "0.24", features = ["png"], default-features = false }
+lazy_static = "1.4"
+log = "0.4"
+maybe_parallel_iterator = { version = "0.12.0", features = [] }
+minicdn = { version = "0.1.20", features = [
+    "config",
+] } # Version and features set via core_protocol.
+rand = "0.8"
+reqwest = { version = "0.11", features = [
+    "rustls-tls",
+], default-features = false }
+rust-embed = "6"
+rustls = "0.21"
+rustrict = { version = "0.7.8", features = [
+    "context",
+    "customize",
+], default-features = false } # Version should match core_protocol.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"
+server_util = { path = "../server_util" }
+structopt = "0.3"
+tokio = "1"
+toml = "0.5"
+tower = "0.4"
+tower-http = { version = "0.3", features = ["cors"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.25", features = ["user"], default-features = false }
+pprof = { version = "0.12", features = ["flamegraph"] }
+
+[build-dependencies]
+base64 = "0.13"
+rand = "0.8"
+rcgen = "0.9"
+gethostname = "0.4.1"

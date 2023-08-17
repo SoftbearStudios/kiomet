@@ -1,0 +1,35 @@
+
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2023-04-25
+          override: true
+          components: rust-src, rustfmt, clippy
+      - name: Install target
+        run: rustup target add wasm32-unknown-unknown
+      - uses: jetli/trunk-action@v0.1.0
+        with:
+          version: 'v0.15.0'
+      - name: Build Client
+        working-directory: ./client
+        run: trunk build --release
+      - name: Build Server
+        working-directory: ./server
+        run: cargo build --release

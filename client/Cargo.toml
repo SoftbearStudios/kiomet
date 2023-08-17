@@ -1,0 +1,46 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+base64 = "0.13"
+bytemuck = { version = "1.9", features = [ "extern_crate_alloc" ] }
+client_util = { path = "../engine/client_util", default-features = false, features = [ "audio", "rand" ] } # TODO "align_2d_camera" once it doesn't snap on zoom.
+common = { path = "../common", default-features = false }
+common_util = { path = "../engine/common_util" }
+core_protocol = { path = "../engine/core_protocol" }
+engine_macros = { path = "../engine/engine_macros" }
+euclid = { version = "0.22", features = [ "bytemuck" ] }
+fxhash = "0.2.1"
+glam = { version = "0.22", features = [ "bytemuck" ] }
+js_hooks = { path = "../engine/js_hooks" }
+lyon_path = "0.17"
+lyon_svg = "0.17"
+lyon_tessellation = "0.17"
+rand = "0.8"
+renderer = { path = "../engine/renderer" }
+renderer2d = { path = "../engine/renderer2d" }
+sprite_sheet = { path = "../engine/sprite_sheet" }
+strum = { version = "0.24.1" }
+stylist = { version = "0.12.1", default-features = false }
+yew = "0.20"
+yew_frontend = { path = "../engine/yew_frontend" }
+yew_icons = { version = "0.7", features = [
+    "BootstrapExclamationTriangleFill",
+    "FontAwesomeSolidLocationCrosshairs",
+    "FontAwesomeSolidHouseCircleExclamation",
+    "FontAwesomeSolidCircleInfo",
+    "FontAwesomeSolidCircleArrowUp",
+    "FontAwesomeSolidWarehouse",
+    "FontAwesomeSolidPersonWalkingDashedLineArrowRight",
+    "FontAwesomeSolidLock"
+] }
+yew-router = "0.17"
+
+[build-dependencies]
+bytemuck = "1.9"
+common_util = { path = "../engine/common_util", features = [ "rand" ] }
+glam = { version = "0.22", features = [ "bytemuck" ] }
+rand = "0.8"
+rand_chacha = "0.3.1"
