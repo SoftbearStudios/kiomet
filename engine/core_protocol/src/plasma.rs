@@ -167,7 +167,10 @@ pub enum PlasmaRequestV1 {
 #[cfg_attr(feature = "server", rtype(result = "()"))]
 pub enum PlasmaUpdate {
     /// Version 1 protocol.
-    V1(Box<[PlasmaUpdateV1]>),
+    V1(
+        #[serde(deserialize_with = "crate::serde_util::box_slice_skip_invalid")]
+        Box<[PlasmaUpdateV1]>,
+    ),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2021 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use crate::bot::BotRepo;
 use crate::chat::ChatRepo;
 use crate::game_service::GameArenaService;
 use crate::liveboard::LiveboardRepo;
 use crate::player::PlayerRepo;
 #[cfg(feature = "teams")]
 use crate::team::TeamRepo;
+use crate::{bot::BotRepo, leaderboard::LeaderboardRepo};
 use core_protocol::ArenaToken;
 use rand::{thread_rng, Rng};
 
@@ -20,6 +20,7 @@ pub struct Context<G: GameArenaService> {
     #[cfg(feature = "teams")]
     pub teams: TeamRepo<G>,
     pub(crate) liveboard: LiveboardRepo<G>,
+    pub(crate) leaderboard: LeaderboardRepo<G>,
 }
 
 impl<G: GameArenaService> Context<G> {
@@ -32,6 +33,7 @@ impl<G: GameArenaService> Context<G> {
             teams: TeamRepo::default(),
             chat: ChatRepo::new(chat_log),
             liveboard: LiveboardRepo::default(),
+            leaderboard: LeaderboardRepo::default(),
         }
     }
 }

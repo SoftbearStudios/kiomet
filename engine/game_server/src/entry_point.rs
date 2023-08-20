@@ -37,15 +37,20 @@ use server_util::observer::{ObserverMessage, ObserverMessageBody, ObserverUpdate
 use server_util::os::set_open_file_limit;
 use server_util::rate_limiter::{RateLimiterProps, RateLimiterState};
 use server_util::user_agent::UserAgent;
-use std::convert::TryInto;
-use std::fs::File;
-use std::io::Write;
-use std::net::{IpAddr, SocketAddr};
-use std::num::NonZeroU64;
-use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    convert::TryInto,
+    fs::File,
+    io::Write,
+    net::{IpAddr, SocketAddr},
+    num::NonZeroU64,
+    str::FromStr,
+    sync::{
+        atomic::{AtomicU64, AtomicU8, Ordering},
+        Arc, Mutex, RwLock,
+    },
+    time::{Duration, Instant},
+};
 use structopt::StructOpt;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
@@ -57,6 +62,7 @@ static REDIRECT_TO_SERVER_ID: AtomicU8 = AtomicU8::new(0);
 static SERVER_TOKEN: AtomicU64 = AtomicU64::new(0);
 
 lazy_static::lazy_static! {
+    static ref REALM_ROUTES: Mutex<HashMap<RealmName, ServerNumber>> = Mutex::default();
     // Will be overwritten first thing.
     static ref HTTP_RATE_LIMITER: Mutex<IpRateLimiter> = Mutex::new(IpRateLimiter::new_bandwidth_limiter(1, 0));
 }
@@ -117,6 +123,61 @@ where
     }
 }
 
+struct ExtractRealmName(RealmName);
+
+impl ExtractRealmName {
+    fn parse(domain: &str) -> Option<RealmName> {
+        if domain.bytes().filter(|&b| b == b'.').count() < 2 {
+            return None;
+        }
+        domain
+            .split('.')
+            .next()
+            .filter(|&host| usize::from_str(host).is_err() && host != "www")
+            .and_then(|host| RealmName::from_str(host).ok())
+    }
+}
+
+enum ExtractRealmNameError {
+    Missing,
+    Invalid,
+}
+
+impl IntoResponse for ExtractRealmNameError {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::UNAUTHORIZED,
+            match self {
+                Self::Missing => "missing realm name",
+                Self::Invalid => "invalid realm name",
+            },
+        )
+            .into_response()
+    }
+}
+
+#[async_trait::async_trait]
+impl<S> FromRequestParts<S> for ExtractRealmName
+where
+    S: Send + Sync,
+{
+    type Rejection = ExtractRealmNameError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        let host = TypedHeader::<axum::headers::Host>::from_request_parts(parts, state)
+            .await
+            .map_err(|_| ExtractRealmNameError::Missing)?;
+        if let Some(realm_name) = Self::parse(host.hostname()) {
+            Ok(Self(realm_name))
+        } else {
+            Err(ExtractRealmNameError::Invalid)
+        }
+    }
+}
+
 pub fn entry_point<G: GameArenaService>(game_client: MiniCdn, browser_router: bool)
 where
     <G as GameArenaService>::GameUpdate: std::fmt::Debug,
@@ -168,12 +229,12 @@ where
         };
 
         let game_client = Arc::new(RwLock::new(game_client));
-        let domain = options.domain.map(|domain| &*Box::leak(domain.into_boxed_str()));
 
         let srv = Infrastructure::<G>::start(
             Infrastructure::new(
                 server_id,
                 &REDIRECT_TO_SERVER_ID,
+                &REALM_ROUTES,
                 static_hash,
                 ip_address.and_then(|ip| if let IpAddr::V4(ipv4_address) = ip {
                     Some(ipv4_address)
@@ -216,20 +277,6 @@ where
         let plasma_srv = srv.to_owned();
         let system_srv = srv.to_owned();
 
-        #[cfg(not(debug_assertions))]
-        let domain_clone_cors = domain.as_ref().map(|d| {
-            [
-                format!("://{}", d),
-                format!(".{}", d),
-                String::from("http://localhost:8080"),
-                String::from("https://localhost:8443"),
-                String::from("http://localhost:80"),
-                String::from("https://localhost:443"),
-                String::from("https://softbear.com"),
-                String::from("https://www.softbear.com"),
-            ]
-        });
-
         let admin_router = post(
             move |_: Authenticated, request: Json<AdminRequest>| {
                 let srv_clone_admin = admin_srv.clone();
@@ -252,7 +299,7 @@ where
 
         let app = Router::new()
             .fallback_service(get(StaticFilesHandler{cdn: game_client, prefix: "", browser_router}))
-            .route("/ws", axum::routing::get(async move |upgrade: WebSocketUpgrade, ConnectInfo(addr): ConnectInfo<SocketAddr>, user_agent: Option<TypedHeader<axum::headers::UserAgent>>, Query(query): Query<WebSocketQuery>| {
+            .route("/ws", axum::routing::get(async move |upgrade: WebSocketUpgrade, ConnectInfo(addr): ConnectInfo<SocketAddr>, user_agent: Option<TypedHeader<axum::headers::UserAgent>>, realm_name: Option<ExtractRealmName>, Query(query): Query<WebSocketQuery>| {
                 let user_agent_id = user_agent
                     .map(|h| UserAgent::new(h.as_str()))
                     .and_then(UserAgent::into_id);
@@ -263,7 +310,7 @@ where
                     ip_address: addr.ip(),
                     referrer: query.referrer,
                     user_agent_id,
-                    realm_name: None, // TODO
+                    realm_name: realm_name.map(|e| e.0),
                     player_id_token: query.player_id.zip(query.token),
                     session_token: query.session_token,
                     date_created: query.date_created.filter(|&d| d > 1680570365768 && d <= now).unwrap_or(now),
@@ -280,7 +327,7 @@ where
                     Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
                     Ok(result) => match result {
                         // Currently, if authentication fails, it was due to rate limit.
-                        Err(_) => Err(StatusCode::TOO_MANY_REQUESTS.into_response()),
+                        Err(e) => Err((StatusCode::TOO_MANY_REQUESTS, e).into_response()),
                         Ok((realm_name, player_id)) => Ok(upgrade
                             .max_frame_size(MAX_MESSAGE_SIZE)
                             .max_message_size(MAX_MESSAGE_SIZE)
@@ -494,18 +541,22 @@ where
                         .get("host")
                         .and_then(|host|
                             host.to_str().ok())
-                        .and_then(|host| host.split('.').next())
-                        .filter(|host| usize::from_str(host).is_err())
-                        .and_then(|host| RealmName::from_str(host).ok());
-                    if let Some(realm_name) = realm_name {
-                        info!("connected to realm {realm_name:?}");
-                    }
-                    if let Some((domain, server_id)) = domain
-                        .as_ref()
-                        .zip(ServerNumber::new(REDIRECT_TO_SERVER_ID.load(Ordering::Relaxed)))
+                        .and_then(ExtractRealmName::parse);
+
+                    if let Some(server_number) =
+                            realm_name
+                                .and_then(|realm_name|
+                                    REALM_ROUTES
+                                        .lock()
+                                        .unwrap()
+                                        .get(&realm_name)
+                                        .copied()
+                                        .filter(|&server_number| server_number != server_id.number || server_id.kind.is_local())
+                                )
+                                .or(ServerNumber::new(REDIRECT_TO_SERVER_ID.load(Ordering::Relaxed)))
                     {
                         let scheme = request.uri().scheme().cloned().unwrap_or(Scheme::HTTPS);
-                        if let Ok(authority) = Authority::from_str(&format!("{}.{}", server_id.0.get(), domain)) {
+                        if let Ok(authority) = Authority::from_str(&format!("{}.{}", server_number.0.get(), G::GAME_ID.domain())) {
                             let mut builder =  Uri::builder()
                                 .scheme(scheme)
                                 .authority(authority);
@@ -541,19 +592,26 @@ where
             .layer(ServiceBuilder::new()
                 .layer(CorsLayer::new()
                     .allow_origin(tower_http::cors::AllowOrigin::predicate(move |origin, _parts| {
-                        #[cfg(debug_assertions)]
-                            {
-                                let _ = origin;
-                                true
+                        if cfg!(debug_assertions) {
+                            true
+                        } else {
+                            let Ok(origin) = std::str::from_utf8(origin.as_bytes()) else {
+                                return false;
+                            };
+
+                            let origin = origin
+                                .trim_start_matches("http://")
+                                .trim_start_matches("https://");
+
+                            for domain in [G::GAME_ID.domain(), "localhost:8080", "localhost:8443", "localhost:80", "localhost:443", "softbear.com"] {
+                                if let Some(prefix) = origin.strip_suffix(domain) {
+                                    if prefix.is_empty() || prefix.ends_with('.') {
+                                        return true;
+                                    }
+                                }
                             }
 
-                        #[cfg(not(debug_assertions))]
-                        if let Some(domains) = domain_clone_cors.as_ref() {
-                            domains.iter().any(|domain| {
-                                origin.as_bytes().ends_with(domain.as_bytes())
-                            })
-                        } else {
-                            true
+                            false
                         }
                     }))
                     .allow_headers(tower_http::cors::Any)

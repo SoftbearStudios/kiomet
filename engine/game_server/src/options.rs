@@ -55,6 +55,7 @@ pub struct Options {
     pub region_id: Option<RegionId>,
     /// Domain (without server id prepended).
     #[allow(dead_code)]
+    #[deprecated = "now from game id"]
     #[structopt(long)]
     pub domain: Option<String>,
     /// Certificate chain path.

@@ -14,17 +14,18 @@ use crate::system::SystemRepo;
 use actix::AsyncContext;
 use actix::{Actor, Context as ActorContext};
 use core_protocol::id::{ClientHash, RegionId, ServerId};
-use core_protocol::{PlasmaRequestV1, PlasmaUpdate};
+use core_protocol::{PlasmaRequestV1, PlasmaUpdate, RealmName, ServerNumber};
 use futures::stream::FuturesUnordered;
 use log::{error, info};
 use minicdn::MiniCdn;
 use server_util::health::Health;
 use server_util::rate_limiter::RateLimiterProps;
+use std::collections::HashMap;
 use std::future::Future;
 use std::net::Ipv4Addr;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, AtomicU8};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 /// An entire game server.
@@ -46,8 +47,6 @@ pub struct Infrastructure<G: GameArenaService> {
     pub(crate) invitations: InvitationRepo<G>,
     /// Shared admin interface.
     pub(crate) admin: AdminRepo<G>,
-    /// Shared leaderboard.
-    pub(crate) leaderboard: LeaderboardRepo<G>,
     /// Shared metrics.
     pub(crate) metrics: MetricRepo<G>,
 
@@ -103,6 +102,7 @@ impl<G: GameArenaService> Infrastructure<G> {
     pub async fn new(
         server_id: ServerId,
         redirect_server_number: &'static AtomicU8,
+        realm_routes: &'static Mutex<HashMap<RealmName, ServerNumber>>,
         client_hash: ClientHash,
         ipv4_address: Option<Ipv4Addr>,
         region_id: Option<RegionId>,
@@ -120,7 +120,7 @@ impl<G: GameArenaService> Infrastructure<G> {
             ipv4_address,
             region_id,
             clients: ClientRepo::new(trace_log, client_authenticate),
-            plasma: PlasmaClient::new(redirect_server_number, server_token),
+            plasma: PlasmaClient::new(redirect_server_number, realm_routes, server_token),
             system: SystemRepo::new(),
             admin: AdminRepo::new(game_client, client_hash),
             arenas: ArenaRepo::new(ContextService::new(
@@ -131,7 +131,6 @@ impl<G: GameArenaService> Infrastructure<G> {
             )),
             health: Health::default(),
             invitations: InvitationRepo::default(),
-            leaderboard: LeaderboardRepo::default(),
             metrics: MetricRepo::new(),
             last_update: Instant::now(),
         }
@@ -151,7 +150,6 @@ impl<G: GameArenaService> Infrastructure<G> {
         for (_, context_service) in self.arenas.iter_mut() {
             context_service.update(
                 &mut self.clients,
-                &mut self.leaderboard,
                 &mut self.invitations,
                 &mut self.metrics,
                 &server_delta,
@@ -159,7 +157,7 @@ impl<G: GameArenaService> Infrastructure<G> {
                 &self.plasma,
             );
         }
-        self.leaderboard.clear_deltas();
+
         self.health.record_tick(G::TICK_PERIOD_SECS);
 
         // These are all rate-limited internally.

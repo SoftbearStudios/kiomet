@@ -4,6 +4,7 @@
 use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer};
 use std::fmt;
+use std::marker::PhantomData;
 
 pub fn is_default<T: Default + PartialEq>(x: &T) -> bool {
     x == &T::default()
@@ -167,4 +168,44 @@ impl<'de> Visitor<'de> for StrVisitor {
     {
         Ok(String::from(value))
     }
+}
+
+pub fn box_slice_skip_invalid<'de, T: Deserialize<'de>, D>(
+    deserializer: D,
+) -> Result<Box<[T]>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged, bound(deserialize = "T: Deserialize<'de>"))]
+    enum Item<T> {
+        Valid(T),
+        Skip(serde::de::IgnoredAny),
+    }
+
+    struct SeqVisitor<T>(PhantomData<T>);
+
+    impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for SeqVisitor<T> {
+        type Value = Box<[T]>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a sequence")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut values = Vec::with_capacity(seq.size_hint().unwrap_or_default().min(32));
+            while let Some(value) = seq.next_element()? {
+                if let Item::<T>::Valid(value) = value {
+                    values.push(value);
+                }
+            }
+            Ok(values.into_boxed_slice())
+        }
+    }
+
+    let visitor = SeqVisitor::<T>(PhantomData);
+    deserializer.deserialize_seq(visitor)
 }

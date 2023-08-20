@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 pub use diff::Diff;
 
-#[derive(Clone, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub enum Command {
     Alliance {
         with: PlayerId,

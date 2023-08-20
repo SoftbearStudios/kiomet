@@ -128,7 +128,7 @@ impl<G: GameArenaService> ClientRepo<G> {
         let player_tuple = match players.get(player_id) {
             Some(player_tuple) => player_tuple,
             None => {
-                debug_assert!(false, "client gone in register");
+                debug_assert!(false, "client {player_id:?} gone in register");
                 return;
             }
         };
@@ -972,6 +972,7 @@ impl<G: GameArenaService> Handler<ObserverMessage<Request<G::GameRequest>, Updat
         _ctx: &mut Self::Context,
     ) {
         let Some(context_service) = self.arenas.get_mut(msg.realm_name) else {
+            error!("missing realm {:?}", msg.realm_name);
             match msg.body {
                 ObserverMessageBody::Register { observer, .. } => {
                     let _ = observer.send(ObserverUpdate::Close);
@@ -995,7 +996,7 @@ impl<G: GameArenaService> Handler<ObserverMessage<Request<G::GameRequest>, Updat
                 #[cfg(feature = "teams")]
                 &mut context_service.context.teams,
                 &context_service.context.chat,
-                &self.leaderboard,
+                &context_service.context.leaderboard,
                 &context_service.context.liveboard,
                 &mut self.metrics,
                 &self.system,
@@ -1103,6 +1104,7 @@ impl<G: GameArenaService> Handler<Authenticate> for Infrastructure<G> {
 
         let realm_name = msg.realm_name;
         let Some(context_service) = self.arenas.get_mut(realm_name) else {
+            log::warn!("no arena {realm_name:?}");
             return Err("no such arena");
         };
         let arena_token = context_service.context.token;

@@ -24,13 +24,11 @@ rustup target add wasm32-unknown-unknown
 3. `trunk build --release` in `/client`
 4. `cargo run --release` in `/server`
 
-## HTTPS
-
-If you build the server in `--release` mode, it will force HTTPS using a self-signed certificate.
-
-Optionally, specify `--certificate-path` and `--private-key-path` to use a trusted CA certificate (e.g. acquired via [Let's Encrypt](https://letsencrypt.org/)). The server will periodically check for and load renewed certificates.
-
 ## Official Server(s)
 
 To avoid potential visibility-cheating, you are prohibited from using the open-source
 client to play on official Kiomet server(s).
+
+## Trademark
+
+Kiomet is a trademark of Softbear, Inc.

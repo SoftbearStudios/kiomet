@@ -116,15 +116,17 @@ impl<G: GameArenaService> LeaderboardRepo<G> {
     }
 
     pub fn update_to_plasma(infrastructure: &mut Infrastructure<G>) {
-        if let Some(scores) = infrastructure.leaderboard.take_pending() {
-            infrastructure
-                .plasma
-                .do_request(PlasmaRequestV1::UpdateLeaderboards {
-                    game_id: G::GAME_ID,
-                    server_id: infrastructure.server_id,
-                    realm_name: None,
-                    scores,
-                });
+        for (realm_name, context_service) in infrastructure.arenas.iter_mut() {
+            if let Some(scores) = context_service.context.leaderboard.take_pending() {
+                infrastructure
+                    .plasma
+                    .do_request(PlasmaRequestV1::UpdateLeaderboards {
+                        game_id: G::GAME_ID,
+                        server_id: infrastructure.server_id,
+                        realm_name,
+                        scores,
+                    });
+            }
         }
     }
 

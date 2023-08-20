@@ -20,7 +20,7 @@ impl<G: GameArenaService> BotData<G> {
         Self {
             bot: G::Bot::default(),
             player_tuple: Arc::new(player_tuple),
-            action_buffer: BotAction::None,
+            action_buffer: BotAction::default(),
         }
     }
 }
@@ -72,7 +72,8 @@ impl<G: GameArenaService> BotRepo<G> {
                     update,
                     bot_data.player_tuple.player.borrow().player_id,
                     players,
-                )
+                );
+                //println!("{:?}", bot_data.action_buffer);
             });
     }
 
@@ -83,7 +84,7 @@ impl<G: GameArenaService> BotRepo<G> {
                 BotAction::Some(command) => {
                     let _ = service.player_command(command, &bot_data.player_tuple, players);
                 }
-                BotAction::None => {}
+                BotAction::None(_) => {}
                 BotAction::Quit => {
                     // Recycle.
                     service.player_left(&bot_data.player_tuple, players);

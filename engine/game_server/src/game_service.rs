@@ -38,7 +38,7 @@ pub trait GameArenaService: 'static + Unpin + Sized + Send + Sync {
     type Bot: 'static + Bot<Self>;
     type ClientData: 'static + Default + Debug + Unpin + Send + Sync;
     type GameUpdate: 'static + Sync + Send + Encode + Decode;
-    type GameRequest: 'static + Decode + Send + Unpin;
+    type GameRequest: 'static + Debug + Decode + Send + Unpin;
     type PlayerData: 'static + Default + Unpin + Send + Sync + Debug;
     type PlayerExtension: 'static + Default + Unpin + Send + Sync;
 
@@ -174,13 +174,13 @@ pub trait Bot<G: GameArenaService>: Default + Unpin + Sized + Send {
 #[derive(Debug)]
 pub enum BotAction<GR> {
     Some(GR),
-    None,
+    None(&'static str),
     Quit,
 }
 
 impl<GR> Default for BotAction<GR> {
     fn default() -> Self {
-        Self::None
+        Self::None("default")
     }
 }
 
@@ -204,7 +204,7 @@ impl<G: GameArenaService> Bot<G> for () {
         _player_id: PlayerId,
         _players: &'a PlayerRepo<G>,
     ) -> BotAction<G::GameRequest> {
-        BotAction::None
+        BotAction::default()
     }
 }
 
@@ -233,7 +233,7 @@ impl Bot<MockGame> for MockGameBot {
         _player_id: PlayerId,
         _players: &PlayerRepo<MockGame>,
     ) -> BotAction<<MockGame as GameArenaService>::GameRequest> {
-        BotAction::None
+        BotAction::default()
     }
 }
 

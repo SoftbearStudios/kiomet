@@ -256,7 +256,6 @@ WorkingDirectory=~
 ExecStart=/root/server \
   --server-id $SERVER_ID \
   --ip-address $IP_ADDRESS \
-  --domain $DOMAIN \
   --chat-log /root/chat.log \
   --trace-log /root/trace.log \
   --certificate-path /etc/letsencrypt/live/$DOMAIN/fullchain.pem \

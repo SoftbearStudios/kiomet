@@ -3,13 +3,15 @@ use actix::{Handler, Recipient};
 use axum::http::Method;
 use core_protocol::{
     ArenaToken, ClientHash, GameId, PlasmaRequest, PlasmaRequestV1, PlasmaUpdate, PlasmaUpdateV1,
-    RegionId, ServerId, ServerRole,
+    RealmName, RegionId, ServerId, ServerNumber, ServerRole,
 };
 use log::{info, warn};
 use reqwest::Client;
+use std::collections::HashMap;
 use std::future::Future;
 use std::net::Ipv4Addr;
 use std::sync::atomic::AtomicU8;
+use std::sync::Mutex;
 use std::time::Instant;
 use std::{
     sync::atomic::{AtomicU64, Ordering},
@@ -18,7 +20,8 @@ use std::{
 
 pub(crate) struct PlasmaClient {
     redirect_server_number: &'static AtomicU8,
-    pub token: &'static AtomicU64,
+    realm_routes: &'static Mutex<HashMap<RealmName, ServerNumber>>,
+    pub server_token: &'static AtomicU64,
     pub role: ServerRole,
     client: Client,
     infrastructure: Option<Recipient<PlasmaUpdate>>,
@@ -31,11 +34,13 @@ pub(crate) struct PlasmaClient {
 impl PlasmaClient {
     pub(crate) fn new(
         redirect_server_number: &'static AtomicU8,
+        realm_routes: &'static Mutex<HashMap<RealmName, ServerNumber>>,
         server_token: &'static AtomicU64,
     ) -> Self {
         Self {
             redirect_server_number,
-            token: server_token,
+            realm_routes,
+            server_token,
             role: ServerRole::Unlisted,
             client: Client::builder()
                 .timeout(Duration::from_secs(15))
@@ -115,7 +120,7 @@ impl PlasmaClient {
         &self,
         request: PlasmaRequestV1,
     ) -> impl Future<Output = Result<PlasmaUpdate, ()>> + Send {
-        Self::request_impl(request, &self.client, self.token)
+        Self::request_impl(request, &self.client, self.server_token)
     }
 
     pub(crate) fn request_impl(
@@ -179,7 +184,7 @@ impl PlasmaClient {
 
     pub(crate) fn do_requests(&self, requests: Vec<PlasmaRequestV1>) {
         let client = self.client.clone();
-        let token = self.token;
+        let token = self.server_token;
         let infrastructure = self.infrastructure.clone();
 
         tokio::spawn(async move {
@@ -220,7 +225,9 @@ impl<G: GameArenaService> Handler<PlasmaUpdate> for Infrastructure<G> {
             match update {
                 PlasmaUpdateV1::ConfigServer { token, role } => {
                     if let Some(token) = token {
-                        self.plasma.token.store(token.0.get(), Ordering::Relaxed);
+                        self.plasma
+                            .server_token
+                            .store(token.0.get(), Ordering::Relaxed);
                     }
                     if let Some(role) = role {
                         self.plasma.set_role(role);
@@ -263,9 +270,9 @@ impl<G: GameArenaService> Handler<PlasmaUpdate> for Infrastructure<G> {
                     leaderboards,
                     realm_name,
                 } => {
-                    if realm_name.is_none() {
-                        for (period_id, leaderboard) in Vec::from(leaderboards) {
-                            self.leaderboard.put_leaderboard(period_id, leaderboard);
+                    for (period_id, scores) in Vec::from(leaderboards) {
+                        if let Some(realm) = self.arenas.get_mut(realm_name) {
+                            realm.context.leaderboard.put_leaderboard(period_id, scores);
                         }
                     }
                 }
@@ -274,12 +281,23 @@ impl<G: GameArenaService> Handler<PlasmaUpdate> for Infrastructure<G> {
                     scores,
                     realm_name,
                 } => {
-                    if realm_name.is_none() {
-                        self.leaderboard.put_leaderboard(period_id, scores);
+                    if let Some(realm) = self.arenas.get_mut(realm_name) {
+                        realm.context.leaderboard.put_leaderboard(period_id, scores);
                     }
                 }
                 PlasmaUpdateV1::Servers { servers } => {
                     self.system.servers = servers;
+                }
+                PlasmaUpdateV1::Realms { added, removed } => {
+                    let mut routes = self.plasma.realm_routes.lock().unwrap();
+                    for removed in removed.iter() {
+                        routes.remove(removed);
+                    }
+                    for added in added.iter() {
+                        if let Some(server_number) = added.server_number {
+                            routes.insert(added.realm_name, server_number);
+                        }
+                    }
                 }
                 _ => {}
             }

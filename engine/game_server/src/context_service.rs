@@ -6,7 +6,6 @@ use crate::client::ClientRepo;
 use crate::context::Context;
 use crate::game_service::GameArenaService;
 use crate::invitation::InvitationRepo;
-use crate::leaderboard::LeaderboardRepo;
 use crate::metric::MetricRepo;
 use crate::plasma::PlasmaClient;
 use core_protocol::dto::ServerDto;
@@ -39,7 +38,6 @@ impl<G: GameArenaService> ContextService<G> {
     pub(crate) fn update(
         &mut self,
         clients: &mut ClientRepo<G>,
-        leaderboard: &mut LeaderboardRepo<G>,
         invitations: &mut InvitationRepo<G>,
         metrics: &mut MetricRepo<G>,
         server_delta: &Option<(Arc<[ServerDto]>, Arc<[ServerNumber]>)>,
@@ -78,17 +76,21 @@ impl<G: GameArenaService> ContextService<G> {
             #[cfg(feature = "teams")]
             &mut self.context.teams,
             &mut self.context.liveboard,
-            leaderboard,
+            &self.context.leaderboard,
             server_delta,
         );
         self.context
             .bots
             .update(&self.service, &self.context.players);
 
-        leaderboard.process(&self.context.liveboard, &self.context.players);
+        self.context
+            .leaderboard
+            .process(&self.context.liveboard, &self.context.players);
 
         // Post-update game logic.
         self.service.post_update(&mut self.context);
+
+        self.context.leaderboard.clear_deltas();
 
         // Bot commands/joining/leaving, postponed because no commands should be issued between
         // `GameService::tick` and `GameService::post_update`.
