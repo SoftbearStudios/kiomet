@@ -1,17 +1,18 @@
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use crate::color::Color;
-use crate::game::TowerGame;
+use crate::game::KiometGame;
 use crate::path::{PathId, SvgCache};
-use crate::translation::TowerTranslation;
 use crate::ui::tower_icon::TowerIcon;
-use crate::ui::TowerUiEvent;
-use client_util::js_util::is_mobile;
+use crate::ui::{KiometPhrases, KiometUiEvent};
 use common::tower::TowerType;
+use kodiak_client::{
+    is_mobile, use_rewarded_ad, use_translator, use_ui_event_callback, Curtain, Position,
+    Positioner, RewardedAd,
+};
 use stylist::yew::styled_component;
 use yew::{html, AttrValue, Callback, Html, MouseEvent, Properties};
-use yew_frontend::component::curtain::Curtain;
-use yew_frontend::component::positioner::{Position, Positioner};
-use yew_frontend::frontend::{use_rewarded_ad, use_ui_event_callback, RewardedAd};
-use yew_frontend::translation::use_translation;
 
 #[derive(PartialEq, Properties)]
 pub struct LockDialogProps {
@@ -45,8 +46,8 @@ pub fn lock_dialog(props: &LockDialogProps) -> Html {
         Some(s.into())
     }
 
-    let t = use_translation();
-    let ui_event_callback = use_ui_event_callback::<TowerGame>();
+    let t = use_translator();
+    let ui_event_callback = use_ui_event_callback::<KiometGame>();
 
     let rewarded_ad = use_rewarded_ad();
     let tower_type = props.tower_type;
@@ -60,15 +61,15 @@ pub fn lock_dialog(props: &LockDialogProps) -> Html {
         Callback::from(move |_: MouseEvent| {
             if let Some(request_ad) = request_ad.as_ref() {
                 request_ad.emit(Some(
-                    ui_event_callback.reform(move |_: ()| TowerUiEvent::Unlock(tower_type)),
+                    ui_event_callback.reform(move |_: ()| KiometUiEvent::Unlock(tower_type)),
                 ))
             }
         })
     } else {
-        ui_event_callback.reform(move |_: MouseEvent| TowerUiEvent::Unlock(tower_type))
+        ui_event_callback.reform(move |_: MouseEvent| KiometUiEvent::Unlock(tower_type))
     };
 
-    let on_close = ui_event_callback.reform(|_: MouseEvent| TowerUiEvent::LockDialog(None));
+    let on_close = ui_event_callback.reform(|_: MouseEvent| KiometUiEvent::LockDialog(None));
 
     let icon_factory = |path_id: PathId| {
         html! {
@@ -144,7 +145,7 @@ pub fn lock_dialog(props: &LockDialogProps) -> Html {
                     </div>
                     if !is_mobile() {
                         <img
-                            src={format!("/paintings/{tower_type}.webp")}
+                            src={format!("/data/paintings/{tower_type}.webp")}
                             style="width: 30rem; min-height: 30rem; height: auto; background-color: #a25e5f; user-drag: none; -webkit-user-drag: none;"
                         />
                     }

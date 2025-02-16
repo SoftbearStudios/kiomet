@@ -1,16 +1,15 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::game::is_visible;
 use crate::path::{PathId, PathLayer};
-use crate::TowerGame;
-use client_util::context::Context;
+use crate::KiometGame;
 use common::alerts::AlertFlag;
 use common::force::Path;
 use common::tower::{Tower, TowerId, TowerType};
-use core_protocol::id::PlayerId;
 use deployment::{best_deployment, still_is_deployment};
-use glam::{Vec2, Vec3};
+use kodiak_client::glam::{Vec2, Vec3};
+use kodiak_client::{ClientContext, PlayerId};
 use std::f32::consts::PI;
 use upgrade::{best_upgrade, still_is_upgrade};
 
@@ -64,7 +63,7 @@ impl Tutorial {
     }
 
     /// Only checks context's game state for changes.
-    pub fn update(&mut self, context: &Context<TowerGame>) {
+    pub fn update(&mut self, context: &ClientContext<KiometGame>) {
         if context.state.game.alive {
             if context.state.game.bounding_rectangle.area() > 18u32.pow(2) {
                 // Don't gank the performance by pathfinding too much.
@@ -208,10 +207,12 @@ impl Tutorial {
 }
 
 mod deployment {
+    use std::num::NonZeroU16;
+
     use super::*;
 
     /// Returns the best deployment option found.
-    pub fn best_deployment(context: &Context<TowerGame>) -> Option<Path> {
+    pub fn best_deployment(context: &ClientContext<KiometGame>) -> Option<Path> {
         // Don't consider more than 50 options because A* is expensive.
         iter_deployments(context)
             .take(50)
@@ -232,7 +233,7 @@ mod deployment {
     }
 
     /// Returns if a deployment previously returned by [`Self::best_deployment`] is valid.
-    pub fn still_is_deployment(context: &Context<TowerGame>, path: &Path) -> bool {
+    pub fn still_is_deployment(context: &ClientContext<KiometGame>, path: &Path) -> bool {
         (|| {
             let src_id = path.source();
             let src = context.state.game.world.chunk.get(src_id)?;
@@ -253,7 +254,7 @@ mod deployment {
     }
 
     /// Is ours and has at least 1 useful unit.
-    fn filter_deployment_src(context: &Context<TowerGame>, src: &Tower) -> bool {
+    fn filter_deployment_src(context: &ClientContext<KiometGame>, src: &Tower) -> bool {
         src.player_id == context.state.core.player_id
             && !src.units.has_ruler()
             && src.units.iter().any(|(unit, _)| unit.can_capture())
@@ -266,7 +267,7 @@ mod deployment {
 
     /// Finds the best valid path to a deployment.
     fn find_best_deployment_path(
-        context: &Context<TowerGame>,
+        context: &ClientContext<KiometGame>,
         src_id: TowerId,
         dst_id: TowerId,
     ) -> Option<Path> {
@@ -282,7 +283,7 @@ mod deployment {
                     .state
                     .core
                     .player_id
-                    .unwrap_or(PlayerId::SOLO_OFFLINE),
+                    .unwrap_or(PlayerId(NonZeroU16::MAX)),
                 |tower_id| {
                     is_visible(context, tower_id)
                         && (tower_id == src_id
@@ -303,7 +304,7 @@ mod deployment {
     }
 
     fn iter_deployments(
-        context: &Context<TowerGame>,
+        context: &ClientContext<KiometGame>,
     ) -> impl Iterator<Item = (Path, TowerType)> + '_ {
         context
             .state
@@ -335,14 +336,14 @@ mod upgrade {
     use super::*;
 
     /// Returns the best upgrade option found.
-    pub fn best_upgrade(context: &Context<TowerGame>) -> Option<TowerId> {
+    pub fn best_upgrade(context: &ClientContext<KiometGame>) -> Option<TowerId> {
         iter_upgrades(context)
             .max_by_key(|(_, upgrade)| upgrade.generates_mobile_units())
             .map(|(tower_id, _)| tower_id)
     }
 
     /// Returns if a deployment previously returned by [`Self::best_upgrade`] is valid.
-    pub fn still_is_upgrade(context: &Context<TowerGame>, tower_id: TowerId) -> bool {
+    pub fn still_is_upgrade(context: &ClientContext<KiometGame>, tower_id: TowerId) -> bool {
         (|| {
             let tower = context.state.game.world.chunk.get(tower_id)?;
             iter_tower_upgrades(context, tower_id, tower)
@@ -354,7 +355,7 @@ mod upgrade {
 
     /// Iterates upgrades of a tower that are available.
     fn iter_tower_upgrades<'a>(
-        context: &'a Context<TowerGame>,
+        context: &'a ClientContext<KiometGame>,
         tower_id: TowerId,
         tower: &'a Tower,
     ) -> impl Iterator<Item = (TowerId, TowerType)> + 'a {
@@ -365,7 +366,7 @@ mod upgrade {
     }
 
     fn iter_upgrades(
-        context: &Context<TowerGame>,
+        context: &ClientContext<KiometGame>,
     ) -> impl Iterator<Item = (TowerId, TowerType)> + '_ {
         context
             .state

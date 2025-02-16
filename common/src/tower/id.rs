@@ -1,18 +1,18 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::chunk::{ChunkId, RelativeTowerId};
 use crate::tower::{integer_sqrt, TowerRectangle, TowerType};
 use crate::world::{World, WorldChunks};
-use common_util::x_vec2::{I16Vec2, U16Vec2, U8Vec2};
-use core_protocol::prelude::*;
-use glam::Vec2;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::glam::Vec2;
+use kodiak_common::{I16Vec2, U16Vec2, U8Vec2};
 use std::ops::{Deref, DerefMut};
 use std::sync::LazyLock;
 
 // Use 32 bit fnv hash because it's fast.
-const FNV_OFFSET: u32 = 2166316261;
-const FNV_PRIME: u32 = 16777639;
+const FNV_OFFSET: u32 = 2166136261;
+const FNV_PRIME: u32 = 16777619;
 
 macro_rules! condense {
     ($input:expr, $t:ty) => {{
@@ -21,24 +21,9 @@ macro_rules! condense {
     }};
 }
 
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Default,
-    Eq,
-    PartialEq,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, PartialOrd, Hash, Encode, Decode)]
 #[repr(transparent)]
-pub struct TowerId(
-    /*#[bitcode_hint(expected_range = "0..511")]*/ pub U16Vec2,
-);
+pub struct TowerId(pub U16Vec2);
 
 impl TowerId {
     pub const CONVERSION: u16 = 5;
@@ -273,25 +258,6 @@ impl From<U16Vec2> for TowerId {
 impl From<TowerId> for U16Vec2 {
     fn from(tower_id: TowerId) -> Self {
         tower_id.0
-    }
-}
-
-impl diff::Diff for TowerId {
-    type Repr = I16Vec2;
-
-    fn diff(&self, other: &Self) -> Self::Repr {
-        let x = other.0.x.wrapping_sub(self.0.x);
-        let y = other.0.y.wrapping_sub(self.0.y);
-        I16Vec2::new(x as i16, y as i16)
-    }
-
-    fn apply(&mut self, diff: &Self::Repr) {
-        self.0.x = self.0.x.wrapping_add(diff.x as u16);
-        self.0.y = self.0.y.wrapping_add(diff.y as u16);
-    }
-
-    fn identity() -> Self {
-        World::CENTER
     }
 }
 

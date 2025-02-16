@@ -1,15 +1,13 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::world::Apply;
-use common_util::actor2::{Actor, Message};
-use common_util::hash::Hashable;
-use core_protocol::prelude::*;
 use fxhash::FxHashSet;
+use kodiak_common::actor_model::{Actor, Message};
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::{Hashable, PlayerId};
 
-pub use core_protocol::PlayerId;
-
-#[derive(Clone, Debug, Default, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Default, Hash, Encode, Decode)]
 pub struct Player {
     pub allies: Hashable<FxHashSet<PlayerId>>, // TODO better set/map.
     pub new_alliances: Hashable<FxHashSet<PlayerId>>,
@@ -24,7 +22,7 @@ impl Actor for Player {
     const KEEPALIVE: u8 = 1;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub enum PlayerInput {
     Died,
     /// Single direction alliance request.
@@ -59,7 +57,7 @@ impl<C> Apply<PlayerInput, C> for Player {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub enum PlayerMaintainance {
     Died,
     RemoveDeadAlly(PlayerId),

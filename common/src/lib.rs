@@ -1,8 +1,7 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-#![feature(array_methods)]
-#![feature(drain_filter)]
+#![feature(extract_if)]
 #![feature(extend_one)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(int_roundings)]
@@ -12,6 +11,8 @@
 #![feature(test)]
 #![feature(variant_count)]
 #![feature(vec_push_within_capacity)]
+
+use kodiak_common::{DefaultedGameConstants, GameConstants};
 
 // Actually required see https://doc.rust-lang.org/beta/unstable-book/library-features/test.html
 #[cfg(test)]
@@ -38,6 +39,16 @@ pub mod tower;
 pub mod unit;
 pub mod units;
 pub mod world;
+
+pub const KIOMET_CONSTANTS: &'static GameConstants = &GameConstants {
+    domain: "kiomet.com",
+    game_id: "Kiomet",
+    geodns_enabled: true,
+    name: "Kiomet",
+    trademark: "Kiomet",
+    server_names: &["Asgard", "Camelot", "Olympus", "Svarga", "Valhalla"],
+    defaulted: DefaultedGameConstants::new(),
+};
 
 // Save memory.
 pub(crate) fn shrink_vec<T>(v: &mut Vec<T>) {

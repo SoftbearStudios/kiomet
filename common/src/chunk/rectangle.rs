@@ -1,12 +1,12 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::chunk::ChunkId;
 use crate::tower::TowerRectangle;
-use common_util::x_vec2::U8Vec2;
-use core_protocol::prelude::*;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::U8Vec2;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Encode, Decode)]
 pub struct ChunkRectangle {
     pub bottom_left: ChunkId,
     pub top_right: ChunkId,

@@ -1,0 +1,1 @@
+include makefiles/game.mk

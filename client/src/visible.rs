@@ -1,10 +1,9 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use common::tower::{Tower, TowerId, TowerMap, TowerRectangle, TowerType};
 use common::world::{World, WorldChunks};
-use common_util::x_vec2::U16Vec2;
-use core_protocol::PlayerId;
+use kodiak_client::{PlayerId, U16Vec2};
 use std::num::NonZeroU16;
 
 #[derive(Default)]

@@ -1,16 +1,14 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::chunk::Chunk;
 use crate::tower::TowerId;
-use common_util::x_vec2::{U16Vec2, U8Vec2};
-use core_protocol::prelude::*;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::{U16Vec2, U8Vec2};
 use std::cmp::Ordering;
 use std::ops::{Add, Deref, DerefMut};
 
-#[derive(
-    Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Serialize, Deserialize, Encode, Decode,
-)]
+#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Encode, Decode)]
 pub struct ChunkId(pub U8Vec2);
 
 // Required to make [`world::towers::ChunkMap`] implement [`OrdIter`] and lookup y first.
@@ -76,9 +74,7 @@ impl From<TowerId> for ChunkId {
 }
 
 /// A [`TowerId`] relative to a [`ChunkId`]. Only 1 byte instead of 4.
-#[derive(
-    Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Serialize, Deserialize, Encode, Decode,
-)]
+#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Encode, Decode)]
 pub struct RelativeTowerId(pub u8);
 
 impl From<TowerId> for RelativeTowerId {

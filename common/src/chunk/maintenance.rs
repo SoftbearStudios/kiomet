@@ -1,18 +1,18 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use super::ChunkId;
 use crate::chunk::{Chunk, RelativeTowerId};
 use crate::info::*;
 use crate::unit::Unit;
 use crate::world::Apply;
-use common_util::actor2::*;
-use core_protocol::id::PlayerId;
-use core_protocol::prelude::*;
-use serde::{Deserialize, Serialize};
+use kodiak_common::actor_model::*;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::PlayerId;
 
 /// The first input that runs each tick. Things that can't be done properly while `ChunkEvent`s are
 /// in flight.
-#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub enum ChunkMaintenance {
     /// If `ChunkEvent`s are in flight, might destroy `Tower` that has incoming units.
     Destroy { tower_ids: Vec<RelativeTowerId> },
@@ -22,8 +22,8 @@ pub enum ChunkMaintenance {
 
 impl Message for ChunkMaintenance {}
 
-impl<C: OnInfo> Apply<ChunkMaintenance, C> for Chunk {
-    fn apply(&mut self, u: &ChunkMaintenance, context: &mut C) {
+impl Apply<ChunkMaintenance, Dst<'_, ChunkId, OnInfo<'_>>> for Chunk {
+    fn apply(&mut self, u: &ChunkMaintenance, context: &mut Dst<'_, ChunkId, OnInfo<'_>>) {
         match u.clone() {
             ChunkMaintenance::Destroy { tower_ids } => {
                 for tower_id in tower_ids {
@@ -39,7 +39,7 @@ impl<C: OnInfo> Apply<ChunkMaintenance, C> for Chunk {
                         tower.set_player_id(None);
 
                         // Don't trigger LostRulerEvents.
-                        context.on_info(InfoEvent {
+                        context(InfoEvent {
                             position: tower_id.as_vec2(),
                             info: Info::LostTower {
                                 tower_id,

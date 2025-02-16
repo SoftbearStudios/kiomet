@@ -1,12 +1,14 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::visible::Visible;
-use client_util::apply::Apply;
+use common::chunk::ChunkRectangle;
 use common::info::InfoEvent;
-use common::protocol::{Diff, NonActor, Update};
+use common::protocol::{NonActor, Update};
 use common::ticks::Ticks;
+use common::tower::TowerRectangle;
 use common::world::{ApplyOwned, World};
+use kodiak_client::Apply;
 use std::ops::Deref;
 
 #[derive(Default)]
@@ -18,6 +20,9 @@ pub struct TowerState {
     /// In seconds; for interpolation.
     pub time_since_last_tick: f32,
     pub ticked: bool, // Consumed in update.
+    pub margin_viewport: TowerRectangle,
+    pub tight_viewport: TowerRectangle,
+    pub set_viewport: ChunkRectangle,
 }
 
 impl Deref for TowerState {
@@ -30,7 +35,7 @@ impl Deref for TowerState {
 
 impl Apply<Update> for TowerState {
     fn apply(&mut self, update: Update) {
-        self.non_actor.apply(&update.non_actor_diff);
+        self.non_actor = update.non_actor;
 
         let mut on_info_event = |info_event| {
             if self.info_events.len() < 128 {

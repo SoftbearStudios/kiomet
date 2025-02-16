@@ -1,8 +1,8 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::color::Color;
-use glam::{Vec2, Vec3, Vec4};
+use kodiak_client::glam::{Vec2, Vec3, Vec4};
 
 pub struct Animation {
     position: Vec2,

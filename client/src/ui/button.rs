@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use stylist::css;
 use stylist::yew::styled_component;
 use yew::virtual_dom::AttrValue;
@@ -6,15 +9,19 @@ use yew::{classes, html, Callback, Children, Classes, Html, MouseEvent, Properti
 #[derive(PartialEq, Properties)]
 pub struct ButtonProps {
     pub children: Children,
+    #[prop_or(None)]
     pub onclick: Option<Callback<MouseEvent>>,
     #[prop_or_default]
     pub disabled: bool,
     #[prop_or_default]
     pub progress: f32,
+    #[prop_or(None)]
     pub title: Option<AttrValue>,
     #[prop_or("background: #888888;".into())]
     pub style: AttrValue,
+    #[prop_or(None)]
     pub class: Option<Classes>,
+    #[prop_or(None)]
     pub content_class: Option<Classes>,
 }
 

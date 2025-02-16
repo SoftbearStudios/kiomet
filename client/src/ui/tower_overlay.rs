@@ -1,21 +1,24 @@
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use crate::color::Color;
 use crate::path::{PathId, SvgCache};
 use crate::settings::Unlocks;
-use crate::translation::TowerTranslation;
 use crate::tutorial::TutorialAlert;
 use crate::ui::button::Button;
 use crate::ui::tower_icon::TowerIcon;
 use crate::ui::unit_icon::UnitIcon;
-use crate::ui::TowerUiEvent;
-use crate::TowerGame;
+use crate::ui::{KiometPhrases, KiometUiEvent};
+use crate::KiometGame;
 use common::tower::{Tower, TowerArray, TowerId, TowerType};
-use glam::IVec2;
+use kodiak_client::glam::IVec2;
+use kodiak_client::{
+    use_core_state, use_rewarded_ad, use_translator, use_ui_event_callback, RankNumber, Translator,
+};
 use stylist::css;
 use stylist::yew::styled_component;
 use yew::virtual_dom::AttrValue;
 use yew::{classes, html, html_nested, Callback, Html, MouseEvent, Properties};
-use yew_frontend::frontend::{use_core_state, use_rewarded_ad, use_ui_event_callback};
-use yew_frontend::translation::{use_translation, Translation};
 
 #[derive(PartialEq, Properties)]
 pub struct TowerOverlayProps {
@@ -24,7 +27,7 @@ pub struct TowerOverlayProps {
     pub tower_id: TowerId,
     pub tower: Tower,
     pub client_position: IVec2,
-    pub tower_counts: TowerArray<u8>,
+    pub tower_counts: TowerArray<u16>,
     pub tutorial_alert: Option<TutorialAlert>,
     pub unlocks: Unlocks,
 }
@@ -93,10 +96,10 @@ pub fn tower_overlay(props: &TowerOverlayProps) -> Html {
     let player_id = props.tower.player_id;
 
     let on_upgrade_factory = {
-        let send_ui_event = use_ui_event_callback::<TowerGame>();
+        let send_ui_event = use_ui_event_callback::<KiometGame>();
 
         move |tower_type: TowerType| {
-            send_ui_event.reform(move |_: MouseEvent| TowerUiEvent::Upgrade {
+            send_ui_event.reform(move |_: MouseEvent| KiometUiEvent::Upgrade {
                 tower_id,
                 tower_type,
             })
@@ -104,35 +107,37 @@ pub fn tower_overlay(props: &TowerOverlayProps) -> Html {
     };
 
     let on_alliance_factory = {
-        let send_ui_event = use_ui_event_callback::<TowerGame>();
+        let send_ui_event = use_ui_event_callback::<KiometGame>();
 
         move |break_alliance: bool| {
-            send_ui_event.reform(move |_: MouseEvent| TowerUiEvent::Alliance {
+            send_ui_event.reform(move |_: MouseEvent| KiometUiEvent::Alliance {
                 with: player_id.unwrap(),
                 break_alliance,
             })
         }
     };
 
+    let core_state = use_core_state();
     let rewarded_ad = use_rewarded_ad();
+
     let locked = {
+        let any_locked = core_state.rank().flatten() < Some(RankNumber::Rank3);
         let unlocks = props.unlocks.clone();
         let available = !rewarded_ad.is_unavailable();
         move |tower_type: TowerType| -> bool {
             let locked = available && tower_type.level() > 0 && !unlocks.contains(tower_type);
-            locked
+            any_locked && locked
         }
     };
 
-    let ui_event_callback = use_ui_event_callback::<TowerGame>();
+    let ui_event_callback = use_ui_event_callback::<KiometGame>();
     let on_open_lock_dialog_factory = {
         let ui_event_callback = ui_event_callback.clone();
         move |tower_type: TowerType| -> Callback<MouseEvent> {
-            ui_event_callback.reform(move |_| TowerUiEvent::LockDialog(Some(tower_type)))
+            ui_event_callback.reform(move |_| KiometUiEvent::LockDialog(Some(tower_type)))
         }
     };
 
-    let core_state = use_core_state();
     let unit_color = props.color;
     let outgoing_alliance = props.outgoing_alliance;
     let is_mine = unit_color == Color::Blue;
@@ -141,7 +146,7 @@ pub fn tower_overlay(props: &TowerOverlayProps) -> Html {
         .and_then(|player_id| core_state.player_or_bot(player_id))
         .map(|p| p.alias);
 
-    let t = use_translation();
+    let t = use_translator();
     fn attr<T: Into<AttrValue>>(s: T) -> Option<AttrValue> {
         Some(s.into())
     }
@@ -181,7 +186,7 @@ pub fn tower_overlay(props: &TowerOverlayProps) -> Html {
                             <Button
                                 disabled={!upgradable}
                                 onclick={if locked { on_open_lock_dialog_factory(upgrade) } else { on_upgrade_factory(upgrade) }}
-                                title={(if downgrade { Translation::downgrade_to_label } else { Translation::upgrade_to_label })(t, t.tower_type_label(upgrade))}
+                                title={(if downgrade { Translator::downgrade_to_label } else { Translator::upgrade_to_label })(&t, &t.tower_type_label(upgrade))}
                                 style={format!("overflow: visible; background-color: {};", color.background_color_css())}
                             >
                                 <img
@@ -209,7 +214,7 @@ pub fn tower_overlay(props: &TowerOverlayProps) -> Html {
                                 <div style="display: flex; flex-direction: column; gap: 0.25rem;">
                                     {upgrade.prerequisites().map(|(prerequisite, requirement)| {
                                         let count = props.tower_counts[prerequisite];
-                                        let color = if count >= requirement {
+                                        let color = if count >= requirement as u16 {
                                             Color::Blue
                                         } else {
                                             Color::Gray
@@ -238,7 +243,7 @@ pub fn tower_overlay(props: &TowerOverlayProps) -> Html {
                 } else {
                     (Color::Purple, PathId::RequestAlliance, t.request_alliance_hint())
                 };
-                let alt = title;
+                let alt = title.clone();
 
                 html_nested! {
                     <div style="display: flex; flex-direction: row; gap: 0.5rem;">

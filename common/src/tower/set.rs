@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::tower::map::TowerMap;
@@ -60,7 +60,7 @@ impl TowerSet {
 #[cfg(test)]
 mod tests {
     use crate::tower::{TowerId, TowerRectangle, TowerSet};
-    use common_util::x_vec2::U16Vec2;
+    use kodiak_common::x_vec2::U16Vec2;
     use std::collections::HashSet;
 
     #[test]

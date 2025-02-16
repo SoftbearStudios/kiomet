@@ -1,20 +1,18 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::tower::{Tower, TowerType};
 use crate::unit::{Unit, UnitCategory};
-use core_protocol::prelude::*;
+use kodiak_common::bitcode::{self, *};
 use std::fmt::Formatter;
 
-#[derive(Clone, Default, Hash, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Default, Hash, PartialEq, Eq, Encode, Decode)]
 pub struct Units {
-    // TODO could be expected range.
     always: [u8; UnitCategory::ALWAYS_COUNT],
     either: UnitsEither,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
-#[bitcode_hint(gamma)]
+#[derive(Clone, Hash, PartialEq, Eq, Encode, Decode)]
 enum UnitsEither {
     Many([u8; UnitCategory::MANY_COUNT]),
     Single(Unit, u8), // The u8 has to be non-zero.
@@ -351,8 +349,8 @@ mod tests {
     use crate::tower::TowerType;
     use crate::unit::Unit;
     use crate::units::Units;
-    use rand::prelude::IteratorRandom;
-    use rand::{thread_rng, Rng};
+    use kodiak_common::rand::prelude::IteratorRandom;
+    use kodiak_common::rand::{thread_rng, Rng};
 
     #[test]
     fn size_of() {

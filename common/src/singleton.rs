@@ -1,14 +1,12 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::ticks::Ticks;
 use crate::world::Apply;
-use common_util::actor2::*;
-use core_protocol::prelude::*;
+use kodiak_common::actor_model::*;
+use kodiak_common::bitcode::{self, *};
 
-#[derive(
-    Copy, Clone, Debug, Hash, PartialEq, PartialOrd, Serialize, Deserialize, Encode, Decode,
-)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, PartialOrd, Encode, Decode)]
 pub struct SingletonId;
 
 impl ActorId for SingletonId {
@@ -16,7 +14,7 @@ impl ActorId for SingletonId {
     type Map<T> = Option<(Self, T)>;
 }
 
-#[derive(Clone, Debug, Default, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Default, Hash, Encode, Decode)]
 pub struct Singleton {
     pub tick: Ticks,
 }
@@ -25,7 +23,7 @@ impl Actor for Singleton {
     type Id = SingletonId;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub enum SingletonInput {}
 
 impl Message for SingletonInput {}

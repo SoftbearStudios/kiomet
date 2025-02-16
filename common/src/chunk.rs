@@ -1,17 +1,17 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::combatants::{CombatInfo, CombatSide, Combatants};
 use crate::info::{GainedTowerReason, Info, InfoEvent, LostRulerReason, LostTowerReason, OnInfo};
-use crate::player::{Player, PlayerId};
+use crate::player::Player;
 use crate::shrink_vec;
 use crate::singleton::Singleton;
 use crate::ticks::Ticks;
 use crate::tower::Tower;
 use crate::tower::TowerId;
 use crate::unit::Unit;
-use common_util::ticks::TicksRepr;
-use core_protocol::prelude::*;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::{PlayerId, TicksRepr};
 use std::num::NonZeroU8;
 use std::ops::{Index, IndexMut};
 
@@ -29,15 +29,10 @@ pub use id::{ChunkId, RelativeTowerId};
 pub use maintenance::ChunkMaintenance;
 pub use rectangle::ChunkRectangle;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Encode, Decode)]
 pub struct Chunk {
-    #[serde(skip, default = "panic_on_default")] // Array > 32 elements, TODO fix or remove serde.
     towers: Box<[Option<Tower>; Self::AREA]>,
     pub(crate) chunk_id: ChunkId, // Temporary hack to get chunk_id inside Apply. TODO C: WithId<ChunkId>.
-}
-
-fn panic_on_default() -> Box<[Option<Tower>; Chunk::AREA]> {
-    panic!("serde unimplemented");
 }
 
 impl Index<RelativeTowerId> for Chunk {
@@ -121,7 +116,7 @@ impl Chunk {
         players: impl Fn(PlayerId) -> &'a Player,
         singleton: &Singleton,
         mut on_event: impl FnMut(ChunkId, ChunkEvent), // TODO put on context?
-        context: &mut impl OnInfo,
+        context: &mut OnInfo<'_>,
     ) {
         if cfg!(debug_assertions) {
             // Ensure we have all the players, to prevent client crashes.
@@ -285,7 +280,7 @@ impl Chunk {
                                 &mut Combatants::force(&mut outbound_force.units),
                                 |info| {
                                     if authoritative_events {
-                                        context.on_info(info.into_info_event(
+                                        context(info.into_info_event(
                                             position,
                                             inbound_force.player_id,
                                             outbound_force.player_id,
@@ -312,7 +307,7 @@ impl Chunk {
             let position = tower_id.as_vec2();
 
             // Force vs. tower.
-            for mut force in tower.inbound_forces.drain_filter(|f| f.tick(tower_id)) {
+            for mut force in tower.inbound_forces.extract_if(|f| f.tick(tower_id)) {
                 let tower_player_id = tower.player_id;
                 if tower_player_id.is_some() || !tower.units.is_empty() {
                     let force_player_id = force.player_id;
@@ -329,7 +324,7 @@ impl Chunk {
                             &mut tower_combatants,
                             |info| {
                                 tower_emped |= info == CombatInfo::Emp(CombatSide::Attacker);
-                                context.on_info(info.into_info_event(
+                                context(info.into_info_event(
                                     position,
                                     force_player_id,
                                     tower_player_id,
@@ -350,7 +345,7 @@ impl Chunk {
 
                         if winner != Some(CombatSide::Attacker) {
                             if let Some(force_player_id) = force_player_id {
-                                context.on_info(InfoEvent {
+                                context(InfoEvent {
                                     position,
                                     info: Info::LostForce(force_player_id),
                                 });
@@ -359,7 +354,7 @@ impl Chunk {
 
                         if winner != Some(CombatSide::Defender) {
                             if let Some(tower_player_id) = tower_player_id {
-                                context.on_info(InfoEvent {
+                                context(InfoEvent {
                                     position,
                                     info: Info::LostTower {
                                         tower_id,
@@ -376,7 +371,7 @@ impl Chunk {
                             let new_player_id = if let Some(force_player_id) =
                                 force_player_id.filter(|_| winner == Some(CombatSide::Attacker))
                             {
-                                context.on_info(InfoEvent {
+                                context(InfoEvent {
                                     position,
                                     info: Info::GainedTower {
                                         tower_id,
@@ -414,7 +409,7 @@ impl Chunk {
                     force.player_id.filter(|_| force.units.is_alive())
                 {
                     // Force explored a tower.
-                    context.on_info(InfoEvent {
+                    context(InfoEvent {
                         position: tower_id.as_vec2(),
                         info: Info::GainedTower {
                             tower_id,
@@ -442,7 +437,7 @@ impl Chunk {
                 } else if force.fuel == 0 {
                     // Expire.
                     if let Some(player_id) = force.player_id {
-                        context.on_info(InfoEvent {
+                        context(InfoEvent {
                             position: tower_id.as_vec2(),
                             info: Info::LostForce(player_id),
                         });
@@ -465,7 +460,7 @@ impl Chunk {
                     {
                         // Cramming.
                         if let Some(player_id) = force.player_id {
-                            context.on_info(InfoEvent {
+                            context(InfoEvent {
                                 position: tower_id.as_vec2(),
                                 info: Info::LostForce(player_id),
                             });
@@ -487,7 +482,7 @@ impl Chunk {
                     );
                 } else if force.units.available(Unit::Ruler) > 0 {
                     if let Some(player_id) = force.player_id {
-                        context.on_info(InfoEvent {
+                        context(InfoEvent {
                             position,
                             info: Info::LostRuler {
                                 player_id,

@@ -1,9 +1,8 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::enum_array::EnumArray;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use serde::{Deserialize, Serialize};
 use strum::{EnumIter, IntoEnumIterator};
 
 /// Fields ordered by distance above ground.
@@ -16,8 +15,6 @@ use strum::{EnumIter, IntoEnumIterator};
     PartialOrd,
     Hash,
     Debug,
-    Serialize,
-    Deserialize,
     EnumIter,
     IntoPrimitive,
     TryFromPrimitive,

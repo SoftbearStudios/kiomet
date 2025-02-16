@@ -1,20 +1,20 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use super::{Chunk, RelativeTowerId};
-use crate::{info::OnInfo, world::Apply};
-use common_util::actor2::Message;
-use core_protocol::prelude::*;
+use crate::world::Apply;
+use kodiak_common::actor_model::Message;
+use kodiak_common::bitcode::{self, *};
 
 #[derive(Clone, Copy, Debug, Encode, Decode)]
 pub enum ChunkHaltEvent {
-    Force(RelativeTowerId, #[bitcode_hint(gamma)] u32),
+    Force(RelativeTowerId, u32),
     SupplyLine(RelativeTowerId),
 }
 
 impl Message for ChunkHaltEvent {}
 
-impl<C: OnInfo> Apply<ChunkHaltEvent, C> for Chunk {
+impl<C: ?Sized> Apply<ChunkHaltEvent, C> for Chunk {
     fn apply(&mut self, u: &ChunkHaltEvent, _context: &mut C) {
         match *u {
             ChunkHaltEvent::Force(relative_tower_id, index) => {

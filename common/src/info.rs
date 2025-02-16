@@ -1,20 +1,22 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::tower::TowerId;
 use crate::unit::Unit;
-use core_protocol::id::PlayerId;
-use glam::Vec2;
+use kodiak_common::glam::Vec2;
+use kodiak_common::PlayerId;
 
-pub trait OnInfo {
-    fn on_info(&mut self, info: InfoEvent);
-}
+pub type OnInfo<'a> = dyn FnMut(InfoEvent) + 'a;
 
-impl<T: FnMut(InfoEvent)> OnInfo for T {
-    fn on_info(&mut self, info: InfoEvent) {
-        self(info)
-    }
-}
+//pub trait OnInfo {
+//    fn on_info(&mut self, info: InfoEvent);
+//}
+
+//impl<T: FnMut(InfoEvent)> OnInfo for T {
+//    fn on_info(&mut self, info: InfoEvent) {
+//        self(info)
+//    }
+//}
 
 #[derive(Debug, Copy, Clone)]
 pub struct InfoEvent {

@@ -1,11 +1,16 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::color::Color;
 use common::tower::TowerType;
 use common::unit::Unit;
-use fxhash::FxHashMap;
-use glam::{Vec2, Vec3, Vec4};
+use kodiak_client::fxhash::FxHashMap;
+use kodiak_client::glam::{Vec2, Vec3, Vec4};
+use kodiak_client::renderer::{
+    self, derive_vertex, include_shader, DefaultRender, InstanceLayer, Layer, MeshBuilder,
+    RenderLayer, Renderer, Shader,
+};
+use kodiak_client::renderer2d::Camera2d;
 use lyon_path::math::Vector;
 use lyon_path::path::Builder;
 use lyon_svg::path::PathEvent;
@@ -17,10 +22,6 @@ use lyon_tessellation::path::{Path, Winding};
 use lyon_tessellation::{
     FillOptions, FillTessellator, StrokeOptions, StrokeTessellator, VertexBuffers,
 };
-use renderer::{
-    derive_vertex, DefaultRender, InstanceLayer, Layer, MeshBuilder, RenderLayer, Renderer, Shader,
-};
-use renderer2d::Camera2d;
 use std::cell::RefCell;
 
 const STROKE_WIDTH: f32 = 0.05;
@@ -115,10 +116,7 @@ impl DefaultRender for PathLayer {
     fn new(renderer: &Renderer) -> Self {
         Self {
             instances: PathInstanceLayer::new(renderer),
-            shader: renderer.create_shader(
-                include_str!("shader/path.vert"),
-                include_str!("shader/path.frag"),
-            ),
+            shader: include_shader!(renderer, "path"),
         }
     }
 }

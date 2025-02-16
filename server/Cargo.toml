@@ -6,12 +6,5 @@ edition = "2021"
 [dependencies]
 atomic_refcell = "0.1"
 common = { path = "../common", features = [ "server" ] }
-common_util = { path = "../engine/common_util", features = [ "rand" ] }
-core_protocol = { path = "../engine/core_protocol" }
-fxhash = "0.2"
-game_server = { path = "../engine/game_server" }
-glam = "0.22"
-log = "0.4"
-minicdn = "0.1"
-rand = "0.8"
+kodiak_server = { git = "https://github.com/softbearstudios/kodiak", tag="0.1.0" }
 ref-cast = "1.0"

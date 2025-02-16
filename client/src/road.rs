@@ -1,13 +1,14 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use common::tower::TowerId;
 use common::world::World;
-use glam::{vec2, Vec2, Vec4};
-use renderer::{
-    derive_vertex, DefaultRender, InstanceLayer, Layer, MeshBuilder, RenderLayer, Renderer, Shader,
+use kodiak_client::glam::{vec2, Vec2, Vec4};
+use kodiak_client::renderer::{
+    derive_vertex, include_shader, DefaultRender, InstanceLayer, Layer, MeshBuilder, RenderLayer,
+    Renderer, Shader,
 };
-use renderer2d::Camera2d;
+use kodiak_client::renderer2d::Camera2d;
 
 derive_vertex!(
     struct Instance {
@@ -43,10 +44,7 @@ impl RoadLayer {
     pub fn new(renderer: &Renderer) -> Self {
         Self {
             instances: RoadInstanceLayer::new(renderer),
-            shader: renderer.create_shader(
-                include_str!("shader/road.vert"),
-                include_str!("shader/road.frag"),
-            ),
+            shader: include_shader!(renderer, "road"),
         }
     }
 

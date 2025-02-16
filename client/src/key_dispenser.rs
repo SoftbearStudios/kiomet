@@ -1,9 +1,9 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use crate::{game::TowerGame, settings::Unlocks};
-use client_util::context::Context;
+use crate::{game::KiometGame, settings::Unlocks};
 use common::tower::{Tower, TowerId};
+use kodiak_client::{ClientContext, RankNumber};
 
 pub struct KeyDispenser {
     last_key_time: f32,
@@ -48,7 +48,7 @@ impl KeyDispenser {
     }
 
     /// Returns if earned the key.
-    pub fn update(&mut self, context: &Context<TowerGame>) -> bool {
+    pub fn update(&mut self, context: &ClientContext<KiometGame>) -> bool {
         if self
             .key
             .and_then(|tower_id| context.state.game.world.chunk.get(tower_id))
@@ -59,13 +59,15 @@ impl KeyDispenser {
             true
         } else {
             if self.progress(context.client.time_seconds, Self::INTERVAL) == 1.0 {
-                if context.settings.unlocks.keys >= Unlocks::MAX {
+                if context.settings.unlocks.keys >= Unlocks::MAX
+                    || context.state.core.rank().flatten() >= Some(RankNumber::Rank3)
+                {
                     self.key = None;
                 } else {
                     self.last_key_time = context.client.time_seconds;
-                    use rand::prelude::IteratorRandom;
+                    use kodiak_client::rand::prelude::IteratorRandom;
                     self.key = Self::iter_keys(context)
-                        .choose(&mut rand::thread_rng())
+                        .choose(&mut kodiak_client::rand::thread_rng())
                         .map(|(id, _)| id);
                 }
             }
@@ -73,7 +75,7 @@ impl KeyDispenser {
         }
     }
 
-    fn iter_keys(context: &Context<TowerGame>) -> impl Iterator<Item = (TowerId, &Tower)> {
+    fn iter_keys(context: &ClientContext<KiometGame>) -> impl Iterator<Item = (TowerId, &Tower)> {
         context
             .state
             .game
@@ -83,14 +85,14 @@ impl KeyDispenser {
             .filter(|(tower_id, _)| Self::can_have_key(*tower_id, context))
     }
 
-    fn can_have_key(tower_id: TowerId, context: &Context<TowerGame>) -> bool {
+    fn can_have_key(tower_id: TowerId, context: &ClientContext<KiometGame>) -> bool {
         if !context.state.game.visible.contains(tower_id) {
             return false;
         }
         let Some(player_id) = context.player_id() else {
             return false;
         };
-        let Some(player) = context.state.game.world.player.get(&player_id) else {
+        let Some(player) = context.state.game.world.player.get(player_id) else {
             // Maybe dead?
             return false;
         };

@@ -1,21 +1,23 @@
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use crate::color::Color;
 use crate::path::{PathId, SvgCache};
-use crate::translation::TowerTranslation;
 use crate::ui::tower_icon::TowerIcon;
 use crate::ui::unit_icon::UnitIcon;
-use crate::ui::TowerRoute;
+use crate::ui::{KiometPhrases, KiometRoute};
 use common::tower::{TowerArray, TowerType};
 use common::unit::Unit;
-use glam::UVec2;
+use kodiak_client::glam::UVec2;
+use kodiak_client::{translate, use_translator, NexusDialog};
 use stylist::yew::styled_component;
 use yew::virtual_dom::AttrValue;
 use yew::{classes, html, html_nested, Callback, Html, Properties};
-use yew_frontend::dialog::dialog::Dialog;
-use yew_frontend::translation::{use_translation, Translation};
 use yew_router::prelude::use_navigator;
 
 #[derive(PartialEq, Properties)]
 pub struct TowersDialogProps {
+    #[prop_or(None)]
     pub selected: Option<TowerType>,
 }
 
@@ -105,7 +107,7 @@ pub fn towers_dialog(props: &TowersDialogProps) -> Html {
         coord_bottom(c).to_string()
     }
 
-    let t = use_translation();
+    let t = use_translator();
     let navigator = use_navigator().unwrap();
     let total_depth =
         coord(TowerType::iter().map(|t| t.level()).max().unwrap() as u32 + 1) + TOWER_SCALE - SCALE;
@@ -117,13 +119,13 @@ pub fn towers_dialog(props: &TowersDialogProps) -> Html {
         - SCALE;
 
     fn tower_ranged_damages(tower_type: TowerType) -> Html {
-        let collected = Unit::iter()
-            .filter(|u| u.is_ranged())
-            .filter_map(|u| {
-                let damage = u.force_ground_damage();
-                let ranged_damage = tower_type.ranged_damage(damage);
-                (ranged_damage < damage).then_some((u, ranged_damage))
-            })
+        let mut iter = Unit::iter().filter(|u| u.is_ranged()).filter_map(|u| {
+            let damage = u.force_ground_damage();
+            let ranged_damage = tower_type.ranged_damage(damage);
+            (ranged_damage < damage).then_some((u, ranged_damage))
+        });
+        let collected = iter
+            .clone()
             .map(|(unit, damage)| {
                 html! {
                     <>
@@ -135,7 +137,7 @@ pub fn towers_dialog(props: &TowersDialogProps) -> Html {
             .intersperse_with(|| html! {{", "}})
             .collect::<Html>();
 
-        if collected == Html::default() {
+        if iter.next().is_none() {
             Html::default()
         } else {
             html! {
@@ -149,7 +151,7 @@ pub fn towers_dialog(props: &TowersDialogProps) -> Html {
     }
 
     html! {
-        <Dialog title={props.selected.map(|selected| t.tower_type_label(selected)).unwrap_or("Towers")}>
+        <NexusDialog title={props.selected.map(|selected| t.tower_type_label(selected)).unwrap_or(translate!(t, "Towers"))}>
              if let Some(selected) = props.selected {
                 if let Some(downgrade) = selected.downgrade() {
                     <p>
@@ -199,7 +201,10 @@ pub fn towers_dialog(props: &TowersDialogProps) -> Html {
                 </p>
                 {tower_ranged_damages(selected)}
                 if selected.sensor_radius() > TowerType::Mine.sensor_radius() {
-                    <p>{format!("Has a {}% higher visual range.", 100 * (selected.sensor_radius() - TowerType::Mine.sensor_radius()) / TowerType::Mine.sensor_radius())}</p>
+                    <p>{(|| {
+                        let percent = 100 * (selected.sensor_radius() - TowerType::Mine.sensor_radius()) / TowerType::Mine.sensor_radius();
+                        translate!(t, "Has a {percent}% higher visual range.")
+                    })()}</p>
                 }
                 if selected == TowerType::Projector {
                     <p>
@@ -210,7 +215,10 @@ pub fn towers_dialog(props: &TowersDialogProps) -> Html {
                 }
             } else {
                 <p>
-                    {format!("Each of the {} towers are represented by one of the following symbols. The solid lines show upgrades, and the dashed lines show prerequisites. Click one of them to learn more!", std::mem::variant_count::<TowerType>())}
+                    {(|| {
+                        let count = std::mem::variant_count::<TowerType>();
+                        translate!(t, "Each of the {count} towers are represented by one of the following symbols. The solid lines show upgrades, and the dashed lines show prerequisites. Click one of them to learn more!")
+                    })()}
                 </p>
             }
             <svg width={"100%"} viewBox={format!("0 0 {total_breadth} {total_depth}")} class={diagram_css}>
@@ -230,7 +238,7 @@ pub fn towers_dialog(props: &TowersDialogProps) -> Html {
                                 width={TOWER_SCALE.to_string()}
                                 height={TOWER_SCALE.to_string()}
                                 href={AttrValue::Static(SvgCache::get(PathId::Tower(tower), if selected { Color::Blue } else { Color::Gray }))}
-                                onclick={Callback::from(move |_| navigator.push(&TowerRoute::towers_specific(tower)))}
+                                onclick={Callback::from(move |_| navigator.push(&KiometRoute::towers_specific(tower)))}
                                 class={classes!((!selected).then(|| tower_unselected_css.clone()))}
                             >
                             <title>{t.tower_type_label(tower)}</title>
@@ -249,6 +257,6 @@ pub fn towers_dialog(props: &TowersDialogProps) -> Html {
                     }
                 }).collect::<Html>()}
             </svg>
-        </Dialog>
+        </NexusDialog>
     }
 }

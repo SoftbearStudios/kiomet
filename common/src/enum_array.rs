@@ -1,10 +1,7 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use core_protocol::prelude::*;
-use diff::{ArrayDiff, Diff};
-use serde::{Deserializer, Serializer};
-use serde_big_array::BigArray;
+use kodiak_common::bitcode::{self, *};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 use strum::IntoEnumIterator;
@@ -22,29 +19,6 @@ impl<K, V: Default, const N: usize> Default for EnumArray<K, V, N> {
             values: [(); N].map(|_| V::default()),
             spooky: PhantomData,
         }
-    }
-}
-
-impl<'de, K, V: Serialize + Deserialize<'de>, const N: usize> Serialize for EnumArray<K, V, N> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        BigArray::serialize(&self.values, serializer)
-    }
-}
-
-impl<'de, K, V: Serialize + Deserialize<'de>, const N: usize> Deserialize<'de>
-    for EnumArray<K, V, N>
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(Self {
-            values: BigArray::deserialize(deserializer)?,
-            spooky: PhantomData,
-        })
     }
 }
 
@@ -106,21 +80,5 @@ where
 {
     fn index_mut(&mut self, index: K) -> &mut Self::Output {
         &mut self.values[Self::to_idx(index)]
-    }
-}
-
-impl<K, V: Default + Diff + PartialEq, const N: usize> diff::Diff for EnumArray<K, V, N> {
-    type Repr = ArrayDiff<V>;
-
-    fn diff(&self, other: &Self) -> Self::Repr {
-        self.values.diff(&other.values)
-    }
-
-    fn apply(&mut self, diff: &Self::Repr) {
-        self.values.apply(diff);
-    }
-
-    fn identity() -> Self {
-        Self::default()
     }
 }

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use super::{Chunk, ChunkId, RelativeTowerId};
@@ -10,8 +10,8 @@ use crate::{
     tower::Tower,
     units::Units,
 };
-use core_protocol::PlayerId;
-use rand::{thread_rng, Rng};
+use kodiak_common::rand::{thread_rng, Rng};
+use kodiak_common::PlayerId;
 use std::num::NonZeroU32;
 use test::Bencher;
 

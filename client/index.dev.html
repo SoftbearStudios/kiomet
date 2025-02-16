@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+    <!--
+        SPDX-FileCopyrightText: 2024 Softbear, Inc.
+        SPDX-License-Identifier: AGPL-3.0-or-later
+    -->
+
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1.0,user-scalable=no">
+    <title>Kiomet</title>
+    <meta name="description" content="Kiomet is a multiplayer real-time strategy game. It is free to play online in a web browser with no install required. Start with a small country and expand into unclaimed areas. Make strategic alliances and join forces to defeat rivals. Protect the king at all times.">
+    <meta name="keywords" content="game, tower, multiplayer, free, F2P">
+    <meta name="theme-color" content="#273644">
+    <meta property="og:title" content="Kiomet"/>
+    <meta name="og:description" content="Kiomet is a multiplayer real-time strategy game. It is free to play online in a web browser with no install required. Start with a small country and expand into unclaimed areas. Make strategic alliances and join forces to defeat rivals. Protect the king at all times.">
+    <meta property="og:type" content="website"/>
+    <meta property="og:image" content="https://kiomet.com/data/512x512.png"/>
+    <link rel="canonical" href="https://kiomet.com/">
+    <link data-trunk rel="icon" type="image/png" href="/data/favicon.png">
+    <link rel="manifest" href="/data/manifest.json">
+    <script>
+        function request_pointer_lock_with_unadjusted_movement(e) {
+            const promise = e.requestPointerLock({unadjustedMovement: true});
+            if (promise) {
+                promise.catch(er => {
+                    if (er.name === "NotSupportedError") {
+                        e.requestPointerLock();
+                    }
+                });
+            }
+        }
+    </script>
+    <link data-trunk rel="rust" data-wasm-opt="0" data-keep-debug/>
+    <link data-trunk rel="copy-dir" href="data/">
+    
+
+    <script>
+        try {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                for (const registration of registrations) {
+                    registration.unregister();
+                }
+            });
+        } catch (e) {
+            console.log(e);
+        }
+
+        function startLoadInterval() {
+            let time = 0;
+            let warning = document.getElementById("load_warning");
+            let warningText = document.getElementById("load_warning_text");
+            const interval = setInterval(() => {
+                if (document.getElementById("canvas")) {
+                    // Loaded.
+                    clearInterval(interval);
+                    if (warning && warning.style) {
+                        warning.style.display = "none";
+                    }
+                    return;
+                }
+
+                if (time > 5) {
+                    warning.style.display = "initial";
+                    warningText.innerText = `Loading taking longer than expected (${Math.floor(time)}s)`;
+                }
+                time += 0.5;
+            }, 500);
+        }
+    </script>
+</head>
+<body style="background-color: #273644;" onload="startLoadInterval()">
+    <div id="load_warning" style="display: none; font-family: sans-serif; padding: 1rem; color: white; position: absolute; left: 50%; text-align: center; top: 50%; transform: translate(-50%, -50%);">
+        <h2 style="margin-top: 0;" id="load_warning_text"></h2>
+        <button onclick="window.location.reload()" style="width: 10rem; height: 3rem; border-radius: 0.5rem; background-color: #505050; border: 2px solid #606060; color: white; font-size: 1.2rem; cursor: pointer;">Click to retry</button>
+    </div>
+</body>
+</html>

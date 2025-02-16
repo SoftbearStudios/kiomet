@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::field::Field;
@@ -6,8 +6,8 @@ use crate::info::{Info, InfoEvent, LostRulerReason};
 use crate::tower::TowerType;
 use crate::unit::Unit;
 use crate::units::Units;
-use core_protocol::id::PlayerId;
-use glam::Vec2;
+use kodiak_common::glam::Vec2;
+use kodiak_common::PlayerId;
 use std::cmp::Ordering;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -143,7 +143,9 @@ impl<'a> Combatants<'a> {
             if DEBUG_FIGHT {
                 println!("{side:?} used {unit:?}");
             }
-            if let Some(unit) = unit && unit.is_single_use() {
+            if let Some(unit) = unit
+                && unit.is_single_use()
+            {
                 match unit {
                     Unit::Emp => {
                         // Don't do 2 emps if emps collide.
@@ -370,7 +372,7 @@ mod tests {
     use crate::tower::{Tower, TowerId, TowerType};
     use crate::unit::Unit;
     use crate::units::Units;
-    use core_protocol::id::PlayerId;
+    use kodiak_common::PlayerId;
 
     fn make_tower_force() -> (Combatants<'static>, Combatants<'static>) {
         (make_tower(TowerType::Mine), make_force())
@@ -393,7 +395,7 @@ mod tests {
 
     #[test]
     fn fuzz() {
-        use rand::{thread_rng, Rng};
+        use kodiak_common::rand::{thread_rng, Rng};
         fn random_units(shield: bool) -> Units {
             let mut ret = Units::default();
             let mut rng = thread_rng();

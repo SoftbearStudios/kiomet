@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::tower::id::TowerNeighbor;
@@ -59,13 +59,13 @@ impl TowerId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common_util::x_vec2::I16Vec2;
+    use kodiak_common::x_vec2::I16Vec2;
     use std::collections::HashSet;
     use test::Bencher;
 
     #[test]
     fn test_connecitivity() {
-        use rand::prelude::*;
+        use kodiak_common::rand::prelude::*;
         let mut rng = thread_rng();
 
         for _ in 0..1000 {

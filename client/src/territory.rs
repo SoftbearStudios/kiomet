@@ -1,10 +1,10 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use common::tower::TowerId;
-use core_protocol::PlayerId;
-use fxhash::FxHashMap;
-use glam::Vec2;
+use kodiak_client::fxhash::FxHashMap;
+use kodiak_client::glam::Vec2;
+use kodiak_client::PlayerId;
 use std::collections::hash_map::Entry;
 
 #[derive(Default)]

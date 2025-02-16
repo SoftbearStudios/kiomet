@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::animation::{Animation, AnimationType};
@@ -12,13 +12,7 @@ use crate::settings::TowerSettings;
 use crate::state::TowerState;
 use crate::territory::Territories;
 use crate::tutorial::Tutorial;
-use crate::ui::{SelectedTower, TowerUiEvent, TowerUiProps};
-use client_util::context::Context;
-use client_util::game_client::GameClient;
-use client_util::keyboard::Key;
-use client_util::mouse::{MouseButton, MouseEvent};
-use client_util::pan_zoom::PanZoom;
-use client_util::visibility::VisibilityEvent;
+use crate::ui::{KiometRoute, KiometUi, KiometUiEvent, KiometUiProps, SelectedTower};
 use common::chunk::ChunkRectangle;
 use common::force::{Force, Path};
 use common::info::{GainedTowerReason, Info, InfoEvent};
@@ -27,36 +21,36 @@ use common::tower::{Tower, TowerId, TowerRectangle, TowerType};
 use common::unit::Unit;
 use common::units::Units;
 use common::world::{World, WorldChunks};
-use common_util::x_vec2::U16Vec2;
-use core_protocol::id::GameId;
-use glam::{IVec2, Vec2, Vec3, Vec4};
-use renderer::{DefaultRender, Layer, RenderChain};
-use renderer2d::{Camera2d, TextLayer};
+use common::KIOMET_CONSTANTS;
+use kodiak_client::glam::{IVec2, Vec2, Vec3, Vec4};
+use kodiak_client::renderer::{DefaultRender, Layer, RenderChain, TextStyle};
+use kodiak_client::renderer2d::{Camera2d, TextLayer};
+use kodiak_client::{
+    include_audio, js_hooks, translate, ClientContext, FatalError, GameClient, GameConstants, Key,
+    MouseButton, MouseEvent, PanZoom, RankNumber, RateLimiter, Translator,
+};
 use std::f32::consts::PI;
 
-engine_macros::include_audio!("/audio.mp3" "./audio.json");
+include_audio!("/data/audio.mp3" "./audio.json");
 
-pub struct TowerGame {
-    camera: Camera2d,
-    render_chain: RenderChain<TowerLayer>,
+pub struct KiometGame {
     animations: Vec<Animation>,
-    /// (start, (current, current time)).
+    camera: Camera2d,
     drag: Option<Drag>,
-    selected_tower_id: Option<TowerId>,
-    pan_zoom: PanZoom,
-    territories: Territories,
-    panning: bool,
-    tutorial: Tutorial,
-    lock_dialog: Option<TowerType>,
     key_dispenser: KeyDispenser,
-    /// Was alive last frame.
+    lock_dialog: Option<TowerType>,
+    pan_zoom: PanZoom,
+    panning: bool,
+    render_chain: RenderChain<TowerLayer>,
+    selected_tower_id: Option<TowerId>,
+    territories: Territories,
+    tutorial: Tutorial,
     was_alive: bool,
-    tight_viewport: TowerRectangle,
-    margin_viewport: TowerRectangle,
+    set_viewport_rate_limit: RateLimiter,
 }
 
-impl TowerGame {
-    fn move_world_space(&mut self, world_space: Vec2, context: &mut Context<Self>) {
+impl KiometGame {
+    fn move_world_space(&mut self, world_space: Vec2, context: &mut ClientContext<Self>) {
         if let Some(drag) = self.drag.as_mut() {
             if let Some(closest) = get_closest(world_space, context) {
                 if Some(closest) != drag.current.map(|(start, _)| start) {
@@ -93,22 +87,28 @@ pub struct TowerLayer {
     text: TextLayer,
 }
 
-impl TowerGame {
+impl KiometGame {
     const RULER_DRAG_DELAY: f32 = 1.2;
 }
 
-impl GameClient for TowerGame {
-    const GAME_ID: GameId = GameId::Kiomet;
+impl GameClient for KiometGame {
+    const GAME_CONSTANTS: &'static GameConstants = KIOMET_CONSTANTS;
+    const LICENSES: &'static str = concat!(
+        include_str!("../../assets/audio/README.md"),
+        include_str!("ui/translations/licenses.md")
+    );
 
     type Audio = Audio;
     type GameRequest = Command;
     type GameState = TowerState;
-    type UiEvent = TowerUiEvent;
-    type UiProps = TowerUiProps;
+    type UiEvent = KiometUiEvent;
+    type UiProps = KiometUiProps;
+    type UiRoute = KiometRoute;
+    type Ui = KiometUi;
     type GameUpdate = Update;
     type GameSettings = TowerSettings;
 
-    fn new(_: &Context<Self>) -> Result<Self, String> {
+    fn new(_: &mut ClientContext<Self>) -> Result<Self, FatalError> {
         let render_chain = RenderChain::new([45, 52, 54, 255], true, |renderer| {
             renderer.enable_angle_instanced_arrays();
 
@@ -121,24 +121,45 @@ impl GameClient for TowerGame {
         })?;
 
         Ok(Self {
-            camera: Camera2d::default(),
-            render_chain,
             animations: Default::default(),
+            camera: Camera2d::default(),
             drag: Default::default(),
-            selected_tower_id: Default::default(),
-            pan_zoom: Default::default(),
-            territories: Default::default(),
-            panning: Default::default(),
-            tutorial: Default::default(),
-            lock_dialog: None,
             key_dispenser: Default::default(),
+            lock_dialog: None,
+            pan_zoom: Default::default(),
+            panning: Default::default(),
+            render_chain,
+            selected_tower_id: Default::default(),
+            territories: Default::default(),
+            tutorial: Default::default(),
             was_alive: Default::default(),
-            tight_viewport: Default::default(),
-            margin_viewport: Default::default(),
+            set_viewport_rate_limit: RateLimiter::new(0.15),
         })
     }
 
-    fn peek_mouse(&mut self, event: &MouseEvent, context: &mut Context<Self>) {
+    fn translate_rank_number(t: &Translator, n: RankNumber) -> String {
+        match n {
+            RankNumber::Rank1 => translate!(t, "rank_1", "Candidate"),
+            RankNumber::Rank2 => translate!(t, "rank_2", "Tactician"),
+            RankNumber::Rank3 => translate!(t, "rank_3", "Strategist"),
+            RankNumber::Rank4 => translate!(t, "rank_4", "Representative"),
+            RankNumber::Rank5 => translate!(t, "rank_5", "Senator"),
+            RankNumber::Rank6 => translate!(t, "rank_6", "Supreme Leader"),
+        }
+    }
+
+    fn translate_rank_benefits(t: &Translator, n: RankNumber) -> Vec<String> {
+        match n {
+            RankNumber::Rank1 => vec![],
+            RankNumber::Rank2 => vec![translate!(t, "Spawn with more soldiers")],
+            RankNumber::Rank3 => vec![translate!(t, "Unlock all towers")],
+            RankNumber::Rank4 => vec![],
+            RankNumber::Rank5 => vec![translate!(t, "Spawn with fighters")],
+            RankNumber::Rank6 => vec![],
+        }
+    }
+
+    fn peek_mouse(&mut self, event: &MouseEvent, context: &mut ClientContext<Self>) {
         update_visible(context);
 
         match *event {
@@ -278,20 +299,7 @@ impl GameClient for TowerGame {
         }
     }
 
-    fn peek_visibility(&mut self, event: &VisibilityEvent, context: &mut Context<Self>) {
-        match event {
-            VisibilityEvent::Visible(visible) if !visible => {
-                // Set this to something invalid, so it will be reset (and resent) on the next update.
-                self.tight_viewport = TowerRectangle::invalid();
-                self.margin_viewport = TowerRectangle::invalid();
-                // Stop receiving big updates (to avoid buffered updates causing issues).
-                context.send_to_game(Command::SetViewport(ChunkRectangle::invalid()))
-            }
-            _ => {}
-        }
-    }
-
-    fn render(&mut self, elapsed_seconds: f32, context: &Context<Self>) {
+    fn render(&mut self, elapsed_seconds: f32, context: &ClientContext<Self>) {
         let mut frame = self.render_chain.begin(context.client.time_seconds);
         let (renderer, layer) = frame.draw();
 
@@ -328,7 +336,7 @@ impl GameClient for TowerGame {
             .visible
             .iter(&context.state.game.world.chunk)
         {
-            if !self.margin_viewport.contains(tower_id) {
+            if !context.state.game.margin_viewport.contains(tower_id) {
                 // TODO iter viewport intersection visible and towers.
                 continue;
             }
@@ -370,7 +378,8 @@ impl GameClient for TowerGame {
 
                 if show_supply_lines || !is_hover || !is_dragging {
                     if let Some(path) = &tower.supply_line {
-                        if tower.player_id.is_some() && tower.player_id == me {
+                        if tower.player_id.is_some() && (tower.player_id == me || context.cheats())
+                        {
                             let alpha = if is_selected {
                                 if is_dragging {
                                     0.5 // Darken selected while changing it.
@@ -546,7 +555,7 @@ impl GameClient for TowerGame {
                     .for_each(|force| draw_force(force));
             }
 
-            if !self.tight_viewport.contains(tower_id) {
+            if !context.state.game.tight_viewport.contains(tower_id) {
                 continue;
             }
 
@@ -556,9 +565,20 @@ impl GameClient for TowerGame {
         }
 
         // Draw keys.
-        if context.client.rewarded_ads && let Some((key, opacity)) = self.key_dispenser.key(context.client.time_seconds) && is_visible(context, key) {
+        if context.client.rewarded_ads
+            && let Some((key, opacity)) = self.key_dispenser.key(context.client.time_seconds)
+            && is_visible(context, key)
+        {
             let (stroke, fill) = Color::Blue.colors(true, hovered_tower_id == Some(key), false);
-            layer.paths.draw_path_a(PathId::Key, key.as_vec2() + Vec2::new(0.0, 1.5), 0.0, 1.0, stroke.map(|s| s.extend(opacity)), fill.map(|f| f.extend(opacity)), false)
+            layer.paths.draw_path_a(
+                PathId::Key,
+                key.as_vec2() + Vec2::new(0.0, 1.5),
+                0.0,
+                1.0,
+                stroke.map(|s| s.extend(opacity)),
+                fill.map(|f| f.extend(opacity)),
+                false,
+            )
         }
 
         self.animations.retain(|animation| {
@@ -622,6 +642,14 @@ impl GameClient for TowerGame {
                             center,
                             text_height,
                             [color.x, color.y, color.z, 1.0].map(|c| (c * 255.0) as u8),
+                            TextStyle::italic_if(
+                                context
+                                    .state
+                                    .core
+                                    .player_or_bot(player_id)
+                                    .map(|p| p.authentic)
+                                    .unwrap_or(false),
+                            ),
                         );
                         if outgoing_request ^ incoming_request {
                             let alliance_color = if incoming_request {
@@ -655,9 +683,9 @@ impl GameClient for TowerGame {
         frame.end(&self.camera);
     }
 
-    fn ui(&mut self, event: TowerUiEvent, context: &mut Context<Self>) {
+    fn ui(&mut self, event: KiometUiEvent, context: &mut ClientContext<Self>) {
         match event {
-            TowerUiEvent::Alliance {
+            KiometUiEvent::Alliance {
                 with,
                 break_alliance,
             } => {
@@ -667,20 +695,19 @@ impl GameClient for TowerGame {
                 });
                 self.close_tower_menu();
             }
-            TowerUiEvent::DismissCaptureTutorial => {
+            KiometUiEvent::DismissCaptureTutorial => {
                 self.tutorial.dismiss_capture();
             }
-            TowerUiEvent::DismissUpgradeTutorial => {
+            KiometUiEvent::DismissUpgradeTutorial => {
                 self.tutorial.dismiss_upgrade();
             }
-            TowerUiEvent::Spawn(alias) => {
-                context.send_set_alias(alias);
-                context.send_to_game(Command::Spawn);
+            KiometUiEvent::Spawn(alias) => {
+                context.send_to_game(Command::Spawn(alias));
             }
-            TowerUiEvent::PanTo(tower_id) => {
+            KiometUiEvent::PanTo(tower_id) => {
                 self.pan_zoom.pan_to(tower_id.as_vec2());
             }
-            TowerUiEvent::Upgrade {
+            KiometUiEvent::Upgrade {
                 tower_id,
                 tower_type,
             } => {
@@ -695,7 +722,7 @@ impl GameClient for TowerGame {
                 });
                 self.close_tower_menu();
             }
-            TowerUiEvent::Unlock(tower_type) => {
+            KiometUiEvent::Unlock(tower_type) => {
                 if let Some(unlocks) = context.settings.unlocks.unlock(tower_type) {
                     context
                         .settings
@@ -703,13 +730,13 @@ impl GameClient for TowerGame {
                 }
                 self.lock_dialog = None;
             }
-            TowerUiEvent::LockDialog(show) => {
+            KiometUiEvent::LockDialog(show) => {
                 self.lock_dialog = show;
             }
         }
     }
 
-    fn update(&mut self, elapsed_seconds: f32, context: &mut Context<Self>) {
+    fn update(&mut self, elapsed_seconds: f32, context: &mut ClientContext<Self>) {
         let me = context.player_id();
 
         // Has it's own method of determining ticked (because it's used in peek_mouse).
@@ -754,7 +781,7 @@ impl GameClient for TowerGame {
                     .visible
                     .iter(&context.state.game.world.chunk)
                     .filter(|&(id, t)| {
-                        self.margin_viewport.contains(id)
+                        context.state.game.margin_viewport.contains(id)
                             && t.supply_line.is_some()
                             && t.player_id.is_some()
                             && t.player_id == me
@@ -779,7 +806,7 @@ impl GameClient for TowerGame {
                 Vec2::splat(WorldChunks::SIZE as f32 * TowerId::CONVERSION as f32 + 100.0),
                 true,
             );
-        } else {
+        } else if context.state.game.bounding_rectangle.is_valid() {
             let bounding_rectangle = context.state.game.bounding_rectangle;
             let bottom_left = bounding_rectangle.bottom_left.floor_position();
             let top_right = bounding_rectangle.top_right.ceil_position();
@@ -920,69 +947,65 @@ impl GameClient for TowerGame {
         let center = self.pan_zoom.get_center();
         let bottom_left = center - self.pan_zoom.get_zooms();
         let top_right = center + self.pan_zoom.get_zooms();
-        let tight_viewport =
+        context.state.game.tight_viewport =
             TowerRectangle::new(TowerId::floor(bottom_left), TowerId::ceil(top_right));
+        context.state.game.margin_viewport = context.state.game.tight_viewport.add_margin(2);
 
-        if tight_viewport != self.tight_viewport {
-            let viewport_margin = U16Vec2::splat(2);
-            let margin_viewport = TowerRectangle::new(
-                TowerId::from(tight_viewport.bottom_left.saturating_sub(viewport_margin)),
-                TowerId::from(tight_viewport.top_right.saturating_add(viewport_margin)),
-            );
-
-            let viewport_chunks: ChunkRectangle = margin_viewport.into();
-            let old_viewport_chunks: ChunkRectangle = self.margin_viewport.into();
-            if viewport_chunks != old_viewport_chunks {
-                context.send_to_game(Command::SetViewport(viewport_chunks));
-            }
-            self.tight_viewport = tight_viewport;
-            self.margin_viewport = margin_viewport;
+        let send_viewport = ChunkRectangle::from(context.state.game.margin_viewport);
+        self.set_viewport_rate_limit.update(elapsed_seconds);
+        if send_viewport != context.state.game.set_viewport && self.set_viewport_rate_limit.ready()
+        {
+            context.state.game.set_viewport = send_viewport;
+            context.send_to_game(Command::SetViewport(send_viewport));
         }
 
-        context.set_ui_props(TowerUiProps {
-            lock_dialog: self.lock_dialog,
-            alive: context.state.game.alive,
-            death_reason: context.state.game.death_reason.into(),
-            selected_tower: self.selected_tower_id.and_then(|tower_id| {
-                // Don't obstruct drag.
-                if self.drag.is_some() {
-                    return None;
-                }
-                context
-                    .state
-                    .game
-                    .world
-                    .chunk
-                    .get(tower_id)
-                    .cloned()
-                    .map(|tower| SelectedTower {
-                        client_position: to_client_position(&self.camera, tower_id.as_vec2()),
-                        color: Color::new(context, tower.player_id),
-                        outgoing_alliance: context
-                            .state
-                            .core
-                            .player_id
-                            .zip(tower.player_id)
-                            .map(|(us, them)| {
-                                context.state.game.world.player(us).allies.contains(&them)
-                            })
-                            .unwrap_or(false),
-                        tower,
-                        tower_id,
-                    })
-            }),
-            tower_counts: context.state.game.tower_counts,
-            alerts: context.state.game.alerts,
-            tutorial_alert: self.tutorial.alert(),
-            unlocks: context.settings.unlocks.clone(),
-        });
+        context.set_ui_props(
+            KiometUiProps {
+                lock_dialog: self.lock_dialog,
+                alive: context.state.game.alive,
+                death_reason: context.state.game.death_reason.into(),
+                selected_tower: self.selected_tower_id.and_then(|tower_id| {
+                    // Don't obstruct drag.
+                    if self.drag.is_some() {
+                        return None;
+                    }
+                    context
+                        .state
+                        .game
+                        .world
+                        .chunk
+                        .get(tower_id)
+                        .cloned()
+                        .map(|tower| SelectedTower {
+                            client_position: to_client_position(&self.camera, tower_id.as_vec2()),
+                            color: Color::new(context, tower.player_id),
+                            outgoing_alliance: context
+                                .state
+                                .core
+                                .player_id
+                                .zip(tower.player_id)
+                                .map(|(us, them)| {
+                                    context.state.game.world.player(us).allies.contains(&them)
+                                })
+                                .unwrap_or(false),
+                            tower,
+                            tower_id,
+                        })
+                }),
+                tower_counts: context.state.game.tower_counts,
+                alerts: context.state.game.alerts,
+                tutorial_alert: self.tutorial.alert(),
+                unlocks: context.settings.unlocks.clone(),
+            },
+            context.state.game.alive,
+        );
 
         self.was_alive = context.state.game.alive;
     }
 }
 
 /// Should attempts to send the player's ruler through this tower be warned against?
-fn is_perilous(context: &Context<TowerGame>, tower_id: TowerId) -> bool {
+fn is_perilous(context: &ClientContext<KiometGame>, tower_id: TowerId) -> bool {
     context
         .state
         .game
@@ -996,7 +1019,7 @@ fn is_perilous(context: &Context<TowerGame>, tower_id: TowerId) -> bool {
         .unwrap_or(false)
 }
 
-impl TowerGame {
+impl KiometGame {
     fn close_tower_menu(&mut self) {
         // Ui is already hidden while dragging.
         if self.drag.is_none() {
@@ -1008,7 +1031,7 @@ impl TowerGame {
         drag: Option<Drag>,
         selected_tower_id: Option<TowerId>,
         get_visibility: &impl Fn(TowerId) -> f32,
-        context: &Context<TowerGame>,
+        context: &ClientContext<KiometGame>,
         layer: &mut TowerLayer,
     ) {
         if let Some((start, current, current_start_time)) = Drag::zip(drag) {
@@ -1081,16 +1104,16 @@ impl TowerGame {
     }
 }
 
-pub fn exists(context: &Context<TowerGame>, tower_id: TowerId) -> bool {
+pub fn exists(context: &ClientContext<KiometGame>, tower_id: TowerId) -> bool {
     context.state.game.world.chunk.get(tower_id).is_some()
 }
 
-pub fn is_visible(context: &Context<TowerGame>, tower_id: TowerId) -> bool {
+pub fn is_visible(context: &ClientContext<KiometGame>, tower_id: TowerId) -> bool {
     context.state.game.visible.contains(tower_id)
 }
 
 /// Updates the visible towers (only does work each game tick).
-fn update_visible(context: &mut Context<TowerGame>) {
+fn update_visible(context: &mut ClientContext<KiometGame>) {
     let Some(me) = context.player_id() else {
         return;
     };
@@ -1104,7 +1127,7 @@ fn update_visible(context: &mut Context<TowerGame>) {
         .update(&context.state.game.world, me, all_visible)
 }
 
-fn get_closest(point: Vec2, context: &Context<TowerGame>) -> Option<TowerId> {
+fn get_closest(point: Vec2, context: &ClientContext<KiometGame>) -> Option<TowerId> {
     TowerId::closest(point).and_then(|center| {
         context
             .state

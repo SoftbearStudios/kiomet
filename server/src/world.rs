@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::TowerService;
@@ -10,31 +10,29 @@ use common::player::{PlayerInput, PlayerMaintainance};
 use common::ticks::Ticks;
 use common::tower::{TowerId, TowerSet, TowerType};
 use common::world::{World, WorldChunks};
-use common_util::x_vec2::U16Vec2;
-use core_protocol::id::PlayerId;
-use fxhash::{FxHashMap, FxHashSet};
-use game_server::player::PlayerRepo;
-use glam::IVec2;
-use rand::thread_rng;
+use kodiak_server::fxhash::{FxHashMap, FxHashSet};
+use kodiak_server::glam::IVec2;
+use kodiak_server::rand::thread_rng;
+use kodiak_server::{PlayerAlias, PlayerId, RankNumber, U16Vec2};
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 impl TowerService {
     pub fn spawn_player(
         &mut self,
         player_id: PlayerId,
-        players: &PlayerRepo<Self>,
+        alias: PlayerAlias,
+        rank: Option<RankNumber>,
     ) -> Result<(), &'static str> {
         const MAX_TRIES: u32 = 100_000;
 
-        let mut player = match players.borrow_player_mut(player_id) {
-            Some(player) => player,
-            None => return Err("player not in game"),
-        };
+        let player = &mut self.player_data[player_id];
 
         if player.alive {
             return Err("already alive");
         }
+
+        player.alias = alias;
 
         let mut governor = MAX_TRIES;
         let start = Instant::now();
@@ -59,7 +57,7 @@ impl TowerService {
 
             let tower_id = TowerId(
                 U16Vec2::try_from(
-                    (common_util::range::gen_radius(&mut rng, search_radius as f32)
+                    (kodiak_server::gen_radius(&mut rng, search_radius as f32)
                         + World::CENTER.0.as_vec2()
                         + 0.5)
                         .floor()
@@ -71,14 +69,17 @@ impl TowerService {
             );
 
             if self.is_spawnable(tower_id) {
-                println!(
-                    "took {} tries (sr = {:.2}) over {:?} to spawn {}",
-                    MAX_TRIES - governor,
-                    search_radius as f32 * TowerId::CONVERSION as f32,
-                    start.elapsed(),
-                    if player.is_bot() { "bot" } else { "player" }
-                );
+                let tries = MAX_TRIES - governor;
+                let elapsed = start.elapsed();
+                if tries > MAX_TRIES / 2 || elapsed > Duration::from_millis(1) {
+                    println!(
+                        "took {tries} tries (sr = {:.2}) over {elapsed:?} to spawn {}",
+                        search_radius as f32 * TowerId::CONVERSION as f32,
+                        if player_id.is_bot() { "bot" } else { "player" }
+                    );
+                }
 
+                let player = &mut self.player_data[player_id];
                 player.lifetime = Ticks::ZERO;
                 player.death_reason = None;
                 player.score = 0;
@@ -93,9 +94,7 @@ impl TowerService {
             }
         };
 
-        drop(player);
-
-        let mut on_info_event = Self::on_info_event(players, |player_id| {
+        let mut on_info_event = Self::on_info_event(&mut self.player_data, |player_id, _| {
             debug_assert!(
                 false,
                 "spawning/increasing radius should not have killed player {:?}",
@@ -108,9 +107,9 @@ impl TowerService {
             // Need to generate spawn point and it's neighbors.
             let mut tower_ids = FxHashSet::default();
             spawn_bubble(tower_id, player_id, |tower_id| {
-                self.traverse(&mut tower_ids, tower_id)
+                traverse(&self.world, &mut tower_ids, tower_id)
             });
-            self.generate(tower_ids, &mut on_info_event);
+            generate(&mut self.world, tower_ids, &mut on_info_event);
 
             // TODO optimization: save bubble in player and increment global tower refcount.
 
@@ -120,6 +119,7 @@ impl TowerService {
                 ChunkInput::Spawn {
                     tower_id,
                     player_id,
+                    rank,
                 },
                 &mut on_info_event,
             );
@@ -141,17 +141,16 @@ impl TowerService {
         player_id: PlayerId,
         with: PlayerId,
         break_alliance: bool,
-        players: &PlayerRepo<Self>,
     ) -> Result<(), &'static str> {
         // TODO visible to player?
-        let Some(mut player) = players.borrow_player_mut(player_id) else {
+        let Some(player) = self.player_data.get_mut(player_id) else {
             return Err("non-existent player");
         };
         let _a = &mut player.alerts;
         // TODO Add AlertFlag::MadeAlliance.
-        drop(player);
+        //drop(player);
 
-        if !(self.regulator.active(player_id) && self.regulator.active(with)) {
+        if !self.player_data.contains(with) {
             return Err("alliance with inactive player");
         }
 
@@ -164,7 +163,7 @@ impl TowerService {
                 self.world.dispatch_player_input(
                     a,
                     PlayerInput::NewAlliance(b),
-                    Self::on_info_event(players, |_| unreachable!()),
+                    Self::on_info_event(&mut self.player_data, |_, _| unreachable!()),
                 );
             }
         }
@@ -178,7 +177,7 @@ impl TowerService {
             self.world.dispatch_player_input(
                 a,
                 input,
-                Self::on_info_event(players, |_| unreachable!()),
+                Self::on_info_event(&mut self.player_data, |_, _| unreachable!()),
             );
 
             if !break_alliance {
@@ -195,7 +194,6 @@ impl TowerService {
         player_id: PlayerId,
         tower_id: TowerId,
         path: Path,
-        players: &PlayerRepo<Self>,
     ) -> Result<(), &'static str> {
         let tower = self.world.chunk.get(tower_id).ok_or("no tower")?;
         if tower.player_id != Some(player_id) {
@@ -212,7 +210,7 @@ impl TowerService {
         let path = path.validate(&self.world.chunk, tower_id, max_edge_distance)?;
 
         if !player_id.is_bot() {
-            let mut player = players.borrow_player_mut(player_id).ok_or_else(|| {
+            let player = self.player_data.get_mut(player_id).ok_or_else(|| {
                 debug_assert!(false, "missing player in deploy force");
                 "missing player in deploy force"
             })?;
@@ -224,7 +222,7 @@ impl TowerService {
         self.world.dispatch_chunk_input(
             chunk_id,
             ChunkInput::DeployForce { tower_id, path },
-            Self::on_info_event(players, |player_id| {
+            &mut Self::on_info_event(&mut self.player_data, |player_id, _| {
                 debug_assert!(
                     false,
                     "deploying force should not have killed player {:?}",
@@ -241,7 +239,6 @@ impl TowerService {
         player_id: PlayerId,
         tower_id: TowerId,
         path: Option<Path>,
-        players: &PlayerRepo<Self>,
     ) -> Result<(), &'static str> {
         let tower = self.world.chunk.get(tower_id).ok_or("no tower")?;
         if tower.player_id != Some(player_id) {
@@ -259,7 +256,7 @@ impl TowerService {
             .filter(|p| Some(p) != tower.supply_line.as_ref());
 
         if !player_id.is_bot() {
-            let mut player = players.borrow_player_mut(player_id).ok_or_else(|| {
+            let player = self.player_data.get_mut(player_id).ok_or_else(|| {
                 debug_assert!(false, "missing player in set supply line");
                 "missing player in set supply line"
             })?;
@@ -279,7 +276,7 @@ impl TowerService {
         self.world.dispatch_chunk_input(
             chunk_id,
             ChunkInput::SetSupplyLine { tower_id, path },
-            |info| {
+            &mut |info| {
                 debug_assert!(false, "expected no info: {info:?}");
             },
         );
@@ -293,7 +290,6 @@ impl TowerService {
         player_id: PlayerId,
         tower_id: TowerId,
         upgrade: TowerType,
-        players: &PlayerRepo<Self>,
     ) -> Result<(), &'static str> {
         let tower = match self.world.chunk.get(tower_id) {
             Some(tower) => tower,
@@ -308,7 +304,7 @@ impl TowerService {
             return Err("upgrade already pending");
         }
 
-        let Some(mut player) = players.borrow_player_mut(player_id) else {
+        let Some(player) = self.player_data.get_mut(player_id) else {
             debug_assert!(false, "nonexistent player in upgrade tower");
             return Err("nonexistent player");
         };
@@ -324,7 +320,7 @@ impl TowerService {
             return Err("invalid upgrade path");
         }
 
-        drop(player);
+        //drop(player);
 
         let (chunk_id, tower_id) = tower_id.split();
         self.world.dispatch_chunk_input(
@@ -333,7 +329,7 @@ impl TowerService {
                 tower_id,
                 tower_type: upgrade,
             },
-            Self::on_info_event(players, |player_id| {
+            &mut Self::on_info_event(&mut self.player_data, |player_id, _| {
                 debug_assert!(
                     false,
                     "upgrading tower should not have killed player {:?}",
@@ -348,12 +344,11 @@ impl TowerService {
     /// # Panics
     ///
     /// If player wasn't passed in and doesn't exist.
-    pub fn kill_player(&mut self, player_id: PlayerId, players: &PlayerRepo<Self>) {
-        let mut player = players.borrow_player_mut(player_id).unwrap();
+    pub fn kill_player(&mut self, player_id: PlayerId) {
+        let player = self.player_data.get_mut(player_id).unwrap();
         player.alive = false;
-        drop(player);
 
-        let mut on_info = Self::on_info_event(players, |player_id| {
+        let mut on_info = Self::on_info_event(&mut self.player_data, |player_id, _| {
             debug_assert!(
                 false,
                 "player {:?} is already dead, should not be killable",
@@ -373,7 +368,7 @@ impl TowerService {
         // Note: the player may not exist in the actor model if player dies one tick after
         // leaving, causing the regulator to remove the actor in the tick they die. This
         // function is called one tick after that.
-        if self.world.player.contains_key(&player_id) {
+        if self.world.player.contains(player_id) {
             for ally_id in self
                 .world
                 .player(player_id)
@@ -382,7 +377,7 @@ impl TowerService {
                 .copied()
                 .collect::<Vec<_>>()
             {
-                if !self.world.player.contains_key(&ally_id) {
+                if !self.world.player.contains(ally_id) {
                     continue;
                 } else {
                     // TODO.
@@ -400,14 +395,16 @@ impl TowerService {
             );
         }
 
+        drop(on_info);
+
         debug_assert_eq!(
-            players.borrow_player(player_id).unwrap().towers,
+            self.player_data.get(player_id).unwrap().towers,
             FxHashSet::default()
         );
     }
 
     /// Removes towers if there are too many.
-    pub fn shrink(&mut self, players: &PlayerRepo<Self>) {
+    pub fn shrink(&mut self) {
         // TODO don't allocate max world size.
         let mut locked = TowerSet::with_bounds(WorldChunks::RECTANGLE);
         for (tower_id, tower) in self.world.chunk.iter_towers() {
@@ -430,17 +427,20 @@ impl TowerService {
             }
         }
 
-        let mut destroy = vec![];
+        let mut to_destroy = vec![];
         for (tower_id, tower) in self.world.chunk.iter_towers() {
             if !locked.contains(tower_id) {
                 debug_assert!(tower.can_destroy());
-                destroy.push(tower_id);
+                to_destroy.push(tower_id);
             }
         }
 
-        self.destroy(
-            destroy,
-            &mut Self::on_info_event(players, |_| unreachable!("generate killed player")),
+        destroy(
+            &mut self.world,
+            to_destroy,
+            &mut Self::on_info_event(&mut self.player_data, |_, _| {
+                unreachable!("generate killed player")
+            }),
         )
     }
 
@@ -527,40 +527,29 @@ impl TowerService {
         //println!("enough = {ret}");
         ret
     }
+}
 
-    /// Adds to `tower_ids` along the path towards the center from `tower_id`.
-    fn traverse(&self, tower_ids: &mut FxHashSet<TowerId>, mut tower_id: TowerId) {
-        while self.world.chunk.get(tower_id).is_none() {
-            if !tower_ids.insert(tower_id) {
-                break;
-            }
-            tower_id = tower_id.neighbor_unchecked(tower_id.connectivity().unwrap());
-        }
+/// Generates all the `tower_ids`.
+fn generate(
+    world: &mut World,
+    tower_ids: impl IntoIterator<Item = TowerId>,
+    c: &mut impl FnMut(InfoEvent),
+) {
+    for (chunk_id, tower_ids) in group(tower_ids) {
+        let input = ChunkInput::Generate { tower_ids };
+        world.dispatch_chunk_input(chunk_id, input, &mut *c);
     }
+}
 
-    /// Destroys all the `tower_ids`.
-    fn destroy(
-        &mut self,
-        tower_ids: impl IntoIterator<Item = TowerId>,
-        c: &mut impl FnMut(InfoEvent),
-    ) {
-        for (chunk_id, tower_ids) in group(tower_ids) {
-            let input = ChunkMaintenance::Destroy { tower_ids };
-            self.world
-                .dispatch_chunk_maintenance(chunk_id, input, &mut *c);
-        }
-    }
-
-    /// Generates all the `tower_ids`.
-    fn generate(
-        &mut self,
-        tower_ids: impl IntoIterator<Item = TowerId>,
-        c: &mut impl FnMut(InfoEvent),
-    ) {
-        for (chunk_id, tower_ids) in group(tower_ids) {
-            let input = ChunkInput::Generate { tower_ids };
-            self.world.dispatch_chunk_input(chunk_id, input, &mut *c);
-        }
+/// Destroys all the `tower_ids`.
+fn destroy(
+    world: &mut World,
+    tower_ids: impl IntoIterator<Item = TowerId>,
+    c: &mut impl FnMut(InfoEvent),
+) {
+    for (chunk_id, tower_ids) in group(tower_ids) {
+        let input = ChunkMaintenance::Destroy { tower_ids };
+        world.dispatch_chunk_maintenance(chunk_id, input, &mut *c);
     }
 }
 
@@ -607,4 +596,14 @@ fn group(tower_ids: impl IntoIterator<Item = TowerId>) -> FxHashMap<ChunkId, Vec
         chunk_map.entry(chunk_id).or_default().push(tower_id)
     }
     chunk_map
+}
+
+/// Adds to `tower_ids` along the path towards the center from `tower_id`.
+fn traverse(world: &World, tower_ids: &mut FxHashSet<TowerId>, mut tower_id: TowerId) {
+    while world.chunk.get(tower_id).is_none() {
+        if !tower_ids.insert(tower_id) {
+            break;
+        }
+        tower_id = tower_id.neighbor_unchecked(tower_id.connectivity().unwrap());
+    }
 }

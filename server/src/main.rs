@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #![feature(entry_insert)]
@@ -6,14 +6,15 @@
 #![feature(let_chains)]
 #![feature(type_alias_impl_trait)]
 
+use kodiak_server::{entry_point, minicdn};
 use service::TowerService;
+use std::process::ExitCode;
 
 mod bot;
-mod regulator;
 mod service;
 mod world;
 
-fn main() {
+fn main() -> ExitCode {
     let cdn = minicdn::release_include_mini_cdn!("../../client/dist/");
-    game_server::entry_point::entry_point::<TowerService>(cdn, true);
+    entry_point::<TowerService>(cdn)
 }

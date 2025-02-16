@@ -1,11 +1,14 @@
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use crate::enum_array::EnumArray;
 use crate::force::{Force, Path};
 use crate::ticks::Ticks;
 use crate::unit::Unit;
 use crate::units::Units;
-use core_protocol::id::PlayerId;
-use core_protocol::prelude::*;
 pub use id::TowerId;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::PlayerId;
 use macros::TowerTypeData;
 pub use map::TowerMap;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -43,7 +46,7 @@ pub(crate) fn fast_integer_sqrt(y: u64) -> u32 {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Encode, Decode)]
 pub struct Tower {
     pub player_id: Option<PlayerId>,
     pub units: Units,
@@ -214,8 +217,6 @@ impl Tower {
     Debug,
     Display,
     EnumString,
-    Serialize,
-    Deserialize,
     Encode,
     Decode,
     EnumIter,
@@ -224,7 +225,6 @@ impl Tower {
     TowerTypeData,
 )]
 #[repr(u8)]
-#[serde(into = "u8", try_from = "u8")]
 #[tower(sensor_radius = 12)]
 #[capacity(Ruler = 1)]
 #[prerequisite(10)]
@@ -434,10 +434,10 @@ impl TowerType {
         return self;
     }
 
-    pub fn has_prerequisites(self, tower_counts: &TowerArray<u8>) -> bool {
+    pub fn has_prerequisites(self, tower_counts: &TowerArray<u16>) -> bool {
         tower_counts
             .iter()
-            .all(|(tower_type, &count)| count >= self.prerequisite(tower_type))
+            .all(|(tower_type, &count)| count >= self.prerequisite(tower_type) as u16)
     }
 
     pub fn max_range() -> u16 {
@@ -463,9 +463,9 @@ impl TowerType {
 }
 
 #[cfg(feature = "server")]
-use rand::prelude::*;
+use kodiak_common::rand::prelude::*;
 #[cfg(feature = "server")]
-impl Distribution<TowerType> for rand::distributions::Standard {
+impl Distribution<TowerType> for kodiak_common::rand::distributions::Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> TowerType {
         TowerType::generate(rng.gen())
     }
@@ -475,7 +475,7 @@ impl Distribution<TowerType> for rand::distributions::Standard {
 mod tests {
     use crate::tower::{fast_integer_sqrt, integer_sqrt, Tower, TowerId, TowerType};
     use crate::unit::Unit;
-    use rand::{thread_rng, Rng};
+    use kodiak_common::rand::{thread_rng, Rng};
     use test::{black_box, Bencher};
 
     #[test]

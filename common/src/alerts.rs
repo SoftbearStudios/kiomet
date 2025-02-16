@@ -1,13 +1,11 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::tower::TowerId;
-use core_protocol::prelude::*;
-use diff::Diff;
 use flagset::{flags, FlagSet};
+use kodiak_common::bitcode::{self, *};
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Diff)]
-#[diff(attr(#[derive(Debug, Serialize, Deserialize)]))]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Encode, Decode)]
 pub struct Alerts {
     /// Approximate ruler position, if known.
     pub ruler_position: Option<TowerId>,

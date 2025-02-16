@@ -1,23 +1,23 @@
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use crate::color::Color;
 use crate::path::{PathId, SvgCache};
-use crate::translation::TowerTranslation;
 use crate::ui::tower_icon::TowerIcon;
 use crate::ui::unit_icon::UnitIcon;
-use crate::ui::TowerRoute;
+use crate::ui::{KiometPhrases, KiometRoute};
 use common::field::Field;
 use common::tower::{Tower, TowerType};
 use common::unit::{Range, Speed, Unit};
-use std::borrow::Cow;
+use kodiak_client::{translate, use_translator, NexusDialog, RouteLink, Translator};
 use stylist::yew::styled_component;
 use yew::virtual_dom::AttrValue;
 use yew::{classes, html, Callback, Html, Properties};
-use yew_frontend::component::route_link::RouteLink;
-use yew_frontend::dialog::dialog::Dialog;
-use yew_frontend::translation::use_translation;
 use yew_router::prelude::use_navigator;
 
 #[derive(PartialEq, Properties)]
 pub struct UnitsDialogProps {
+    #[prop_or(None)]
     pub selected: Option<Unit>,
 }
 
@@ -49,33 +49,33 @@ pub fn units_dialog(props: &UnitsDialogProps) -> Html {
     const SCALE: u32 = 3;
     const UNIT_SCALE: u32 = 2;
 
-    let t = use_translation();
+    let t = use_translator();
     let navigator = use_navigator().unwrap();
     let total_breadth = std::mem::variant_count::<Unit>() as u32 * SCALE + UNIT_SCALE - SCALE;
 
-    fn speed(unit: Unit) -> &'static str {
+    fn speed(t: &Translator, unit: Unit) -> String {
         match unit.speed(None) {
-            Speed::Immobile => "Is immobile.",
-            Speed::Slow => "Travels at a slow speed.",
-            Speed::Normal => "Travels at a moderate speed.",
-            Speed::Fast => "Travels at a fast speed.",
+            Speed::Immobile => translate!(t, "Is immobile."),
+            Speed::Slow => translate!(t, "Travels at a slow speed."),
+            Speed::Normal => translate!(t, "Travels at a moderate speed."),
+            Speed::Fast => translate!(t, "Travels at a fast speed."),
         }
     }
 
-    fn range(unit: Unit) -> Option<&'static str> {
+    fn range(t: &Translator, unit: Unit) -> Option<String> {
         Some(match unit.range()? {
-            Range::Short => "Has a short range.",
-            Range::Medium => "Has a medium range.",
-            Range::Long => "Has a long range.",
+            Range::Short => translate!(t, "Has a short range."),
+            Range::Medium => translate!(t, "Has a medium range."),
+            Range::Long => translate!(t, "Has a long range."),
         })
     }
 
-    fn damage(unit: Unit) -> String {
-        fn format_damage(damage: u8) -> Cow<'static, str> {
+    fn damage(t: &Translator, unit: Unit) -> String {
+        fn format_damage(t: &Translator, damage: u8) -> String {
             if damage == Unit::INFINITE_DAMAGE {
-                Cow::Borrowed("infinite")
+                translate!(t, "infinite")
             } else {
-                Cow::Owned(format!("{}", damage))
+                format!("{}", damage)
             }
         }
 
@@ -86,24 +86,26 @@ pub fn units_dialog(props: &UnitsDialogProps) -> Html {
             .damage(Field::Surface, Field::Air)
             .max(unit.damage(Field::Air, Field::Air));
         if surface == air {
-            format!("Does {} damage.", format_damage(surface))
+            let damage = format_damage(t, surface);
+            translate!(t, "Does {damage} damage.")
         } else {
-            format!(
-                "Does {} damage against surface, {} damage against air.",
-                format_damage(surface),
-                format_damage(air)
+            let surface = format_damage(t, surface);
+            let air = format_damage(t, air);
+            translate!(
+                t,
+                "Does {surface} damage against surface, {air} damage against air."
             )
         }
     }
 
     html! {
-        <Dialog title={props.selected.map(|selected| t.unit_label(selected)).unwrap_or("Units")}>
+        <NexusDialog title={props.selected.map(|selected| t.unit_label(selected)).unwrap_or(translate!(t, "Units"))}>
             if let Some(selected) = props.selected {
                 if TowerType::iter().any(|tower_type| tower_type.unit_generation(selected).is_some()) {
                     <p>
                         if TowerType::iter().all(|tower_type| tower_type.unit_generation(selected).is_some()) {
                             {"Produced by all "}
-                            <RouteLink<TowerRoute> route={TowerRoute::Towers}>{"towers"}</RouteLink<TowerRoute>>
+                            <RouteLink<KiometRoute> route={KiometRoute::Towers}>{"towers"}</RouteLink<KiometRoute>>
                             {"."}
                         } else {
                             {"Produced by "}
@@ -120,19 +122,19 @@ pub fn units_dialog(props: &UnitsDialogProps) -> Html {
                         <UnitIcon unit={Unit::Shield}/>
                         {format!(" capacity by {}.", Tower::RULER_SHIELD_BOOST)}
                     </p>
-                    <p>{"If it dies, you lose the game."}</p>
+                    <p>{translate!(t, "If it dies, you lose the game.")}</p>
                 }
-            <p>{damage(selected)}</p>
+            <p>{damage(&t, selected)}</p>
                 <p>
                     if selected == Unit::Shield {
                         {"Immobile unless sent from "}
                         <TowerIcon tower_type={TowerType::Projector}/>
-                        {"."}
+                        {", in which case it travels at a fast speed."}
                     } else {
-                        {speed(selected)}
+                        {speed(&t, selected)}
                     }
                 </p>
-                if let Some(range) = range(selected) {
+                if let Some(range) = range(&t, selected) {
                     <p>{range}</p>
                 }
                 if selected.weight() != 0 {
@@ -145,14 +147,23 @@ pub fn units_dialog(props: &UnitsDialogProps) -> Html {
                 if selected == Unit::Chopper {
                     <p>{"Can carry other units (weight of 4)."}</p>
                 } else if selected == Unit::Emp {
-                    <p>{format!("Disables tower for {} seconds.", Unit::EMP_SECONDS)}</p>
+                    <p>{(|| {
+                        let seconds = Unit::EMP_SECONDS;
+                        translate!(t, "Disables tower for {seconds}.")
+                    })()}</p>
                 }
                 if selected.max_overflow() > 0 {
-                    <p>{format!("Up to {} can temporarily overflow a tower.", selected.max_overflow())}</p>
+                    <p>{(|| {
+                        let count = selected.max_overflow();
+                        translate!(t, "Up to {count} can temporarily overflow a tower.")
+                    })()}</p>
                 }
             } else {
                 <p>
-                    {format!("Each of the {} units are represented by one of the following symbols. They generally fight in the order listed, e.g. shield always absorbs damage first. Click one of them to learn more!", std::mem::variant_count::<Unit>())}
+                    {(|| {
+                        let count = std::mem::variant_count::<Unit>();
+                        translate!(t, "Each of the {count} units are represented by one of the following symbols. They generally fight in the order listed, e.g. shield always absorbs damage first. Click one of them to learn more!")
+                    })()}
                 </p>
             }
             <svg width={"100%"} viewBox={format!("0 0 {total_breadth} {UNIT_SCALE}")} class={diagram_css}>
@@ -168,7 +179,7 @@ pub fn units_dialog(props: &UnitsDialogProps) -> Html {
                                 width={UNIT_SCALE.to_string()}
                                 height={UNIT_SCALE.to_string()}
                                 href={AttrValue::Static(SvgCache::get(PathId::Unit(unit), if selected { Color::Blue } else { Color::Gray }))}
-                                onclick={Callback::from(move |_| navigator.push(&TowerRoute::units_specific(unit)))}
+                                onclick={Callback::from(move |_| navigator.push(&KiometRoute::units_specific(unit)))}
                                 class={classes!((!selected).then(|| unit_unselected_css.clone()))}
                             >
                                 <title>{t.unit_label(unit)}</title>
@@ -177,6 +188,6 @@ pub fn units_dialog(props: &UnitsDialogProps) -> Html {
                     }
                 }).collect::<Html>()}
             </svg>
-        </Dialog>
+        </NexusDialog>
     }
 }

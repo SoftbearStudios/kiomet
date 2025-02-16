@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2023 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use common_util::angle::Angle;
 use glam::Vec2;
+use kodiak_common::Angle;
 use std::env;
 use std::path::Path;
 

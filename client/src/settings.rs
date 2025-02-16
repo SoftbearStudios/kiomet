@@ -1,9 +1,10 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use client_util::browser_storage::BrowserStorages;
-use client_util::setting::{SettingCategory, Settings};
 use common::tower::TowerType;
+use kodiak_client::{
+    settings_prerequisites, BrowserStorages, SettingCategory, Settings, Translator,
+};
 use std::collections::HashSet;
 use std::fmt::{self, Display, Formatter, Write};
 use std::str::FromStr;

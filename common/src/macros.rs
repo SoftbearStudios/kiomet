@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #[cfg(test)]
@@ -9,11 +9,11 @@ macro_rules! serialized_size_enum {
         let t = stringify!($t);
         println!(
             "{t} is {} bytes",
-            bincode::serialize(&array).unwrap().len() as f32 / array.len() as f32
+            bitcode::serialize(&array).unwrap().len() as f32 / array.len() as f32
         );
         println!(
             "{t} is {:.1} bits",
-            core_protocol::bitcode::encode(&[array; 8]).unwrap().len() as f32 / array.len() as f32
+            kodiak_common::encode_buffer(&[array; 8]).unwrap().len() as f32 / array.len() as f32
         );
     };
 }
@@ -23,10 +23,10 @@ macro_rules! serialized_size_value {
     ($t:literal, $v:expr) => {
         let t = $t;
         let v = $v;
-        println!("{t} is {} bytes", bincode::serialize(&v).unwrap().len());
+        println!("{t} is {} bytes", bitcode::serialize(&v).unwrap().len());
         println!(
             "{t} is {:.1} bits",
-            core_protocol::bitcode::encode(&[(); 8].map(|_| &v))
+            kodiak_common::encode_buffer(&[(); 8].map(|_| &v))
                 .unwrap()
                 .len()
         );

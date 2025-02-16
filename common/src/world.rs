@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::chunk::*;
@@ -6,8 +6,12 @@ use crate::info::*;
 use crate::player::*;
 use crate::singleton::*;
 use crate::tower::{integer_sqrt, TowerId};
-use common_util::actor2::*;
-use core_protocol::prelude::*;
+use kodiak_common::actor_model::*;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::{
+    apply, apply_inputs, define_actor_state, define_events, define_world, singleton, singleton_mut,
+    PlayerId,
+};
 use std::collections::BTreeMap;
 
 mod towers;
@@ -26,7 +30,7 @@ impl Actor for Chunk {
 }
 
 define_events!(Chunk, Server, ChunkMaintenance, ChunkInput; Encode, Decode);
-define_events!(Chunk, ChunkId, ChunkEvent, ChunkHaltEvent; Encode, Decode);
+define_events!(Chunk, ChunkId, ChunkHaltEvent, ChunkEvent; Encode, Decode);
 define_actor_state!(Chunk, Server, ChunkId; Encode, Decode);
 define_events!(Player, Server, PlayerMaintainance, PlayerInput; Encode, Decode);
 define_actor_state!(Player, Server; Encode, Decode);
@@ -34,8 +38,8 @@ define_events!(Singleton, Server, SingletonInput; Encode, Decode);
 define_actor_state!(Singleton, Server; Encode, Decode);
 define_world!((), Chunk, Player, Singleton; Encode, Decode); // todo cksum
 
-impl<C: OnInfo> WorldTick<C> for World {
-    fn tick_before_inputs(&mut self, context: &mut C) {
+impl WorldTick<OnInfo<'_>> for World {
+    fn tick_before_inputs(&mut self, context: &mut OnInfo<'_>) {
         let Some(singleton) = singleton_mut!(self) else {
             return;
         };
@@ -110,23 +114,20 @@ impl<C: OnInfo> WorldTick<C> for World {
         self.extend(chunk_events);
     }
 
-    fn tick_after_inputs(&mut self, context: &mut C) {
+    fn tick_after_inputs(&mut self, context: &mut OnInfo<'_>) {
         // We apply chunk events after inputs since `ChunkInput`s may create `ChunkEvent`s.
         // TODO detect if events weren't applied in debug mode.
         apply!(self, Chunk, ChunkId, ChunkEvent, context);
     }
 
-    fn tick_client(&mut self, context: &mut C) {
+    fn tick_client(&mut self, context: &mut OnInfo<'_>) {
         apply_inputs!(self, Chunk, ChunkMaintenance, context);
         apply_inputs!(self, Player, PlayerMaintainance, context);
         self.tick_before_inputs(context);
         {
-            let mut context = InputContext {
-                events: Default::default(),
-                on_info: &mut *context,
-            };
+            let mut context = OnChunkEvent::new(&mut *context);
             apply_inputs!(self, Chunk, ChunkInput, &mut context);
-            self.extend(context.events);
+            self.extend(context.into_events());
         }
         apply_inputs!(self, Player, PlayerInput, context);
         apply_inputs!(self, Singleton, SingletonInput, context);
@@ -238,11 +239,12 @@ impl World {
         &mut self,
         chunk_id: ChunkId,
         input: ChunkMaintenance,
-        mut on_info: impl FnMut(InfoEvent),
+        on_info: &mut OnInfo,
     ) {
+        let on_info = &mut kodiak_common::actor_model::Dst::new(on_info, chunk_id);
         Map::get_mut(&mut self.chunk, chunk_id)
             .unwrap()
-            .apply_owned(input, &mut on_info);
+            .apply_owned(input, on_info);
     }
 
     #[cfg(feature = "server")]
@@ -250,17 +252,14 @@ impl World {
         &mut self,
         chunk_id: ChunkId,
         input: ChunkInput,
-        mut on_info: impl FnMut(InfoEvent),
+        on_info: &mut OnInfo,
     ) {
-        let mut context = InputContext {
-            events: vec![], // TODO don't allocate (only needs 1 event).
-            on_info: &mut on_info,
-        };
+        let mut context = OnChunkEvent::new(on_info);
 
         Map::get_mut(&mut self.chunk, chunk_id)
             .unwrap()
             .apply_owned(input, &mut context);
-        self.extend(context.events);
+        self.extend(context.into_events());
     }
 
     #[cfg(feature = "server")]
@@ -398,6 +397,7 @@ impl World {
     }
 }
 
+/*
 /// Context needed during ChunkInput apply.
 struct InputContext<I> {
     events: Vec<(ChunkId, (ChunkId, ChunkEvent))>,
@@ -415,6 +415,7 @@ impl<I> OnChunkEvent for InputContext<I> {
         self.events.push((event.dst, (src, event.event)))
     }
 }
+*/
 
 #[cfg(test)]
 mod tests {

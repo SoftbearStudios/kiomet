@@ -1,15 +1,13 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::chunk::ChunkRectangle;
 use crate::tower::TowerId;
 use crate::world::WorldChunks;
-use common_util::x_vec2::U16Vec2;
-use core_protocol::prelude::*;
-use diff::Diff;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::U16Vec2;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode, Diff)]
-#[diff(attr(#[derive(Debug, Serialize, Deserialize)]))]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Encode, Decode)]
 pub struct TowerRectangle {
     pub bottom_left: TowerId,
     pub top_right: TowerId,

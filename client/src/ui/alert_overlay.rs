@@ -1,29 +1,31 @@
-use crate::translation::TowerTranslation;
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use crate::tutorial::TutorialAlert;
-use crate::ui::TowerUiEvent;
-use crate::TowerGame;
+use crate::ui::{KiometPhrases, KiometUiEvent};
+use crate::KiometGame;
 use common::alerts::{AlertFlag, Alerts};
 use common::tower::TowerId;
+use kodiak_client::{use_translator, use_ui_event_callback};
 use stylist::yew::styled_component;
 use yew::virtual_dom::AttrValue;
 use yew::{classes, hook, html, use_state, Callback, Html, MouseEvent, Properties, UseStateHandle};
-use yew_frontend::frontend::use_ui_event_callback;
-use yew_frontend::translation::{use_translation, Translation};
 use yew_icons::{Icon, IconId};
 
 #[derive(PartialEq, Properties)]
 pub struct AlertOverlayProps {
     pub alerts: Alerts,
+    #[prop_or(None)]
     pub tutorial_alert: Option<TutorialAlert>,
 }
 
 #[styled_component(AlertOverlay)]
 pub fn alert_overlay(props: &AlertOverlayProps) -> Html {
-    let send_event = use_ui_event_callback::<TowerGame>();
+    let send_event = use_ui_event_callback::<KiometGame>();
     let send_event_factory =
-        |event: TowerUiEvent| -> Callback<MouseEvent> { send_event.reform(move |_| event) };
+        |event: KiometUiEvent| -> Callback<MouseEvent> { send_event.reform(move |_| event) };
 
-    let pan_to = send_event.reform(TowerUiEvent::PanTo);
+    let pan_to = send_event.reform(KiometUiEvent::PanTo);
     let pan_to_factory =
         |tower_id: TowerId| -> Callback<MouseEvent> { pan_to.reform(move |_| tower_id) };
 
@@ -51,7 +53,7 @@ pub fn alert_overlay(props: &AlertOverlayProps) -> Html {
     let (show_overflowing, dismiss_overflowing) = use_dismissible();
     let (show_zombies, dismiss_zombies) = use_dismissible();
 
-    let t = use_translation();
+    let t = use_translator();
 
     html! {
         <table class={overlay_css}>
@@ -69,7 +71,7 @@ pub fn alert_overlay(props: &AlertOverlayProps) -> Html {
                         hint={t.alert_capture_hint()}
                         icon_id={IconId::FontAwesomeSolidWarehouse}
                         onclick={pan_to_factory(tower_id)}
-                        onclick_dismiss={send_event_factory(TowerUiEvent::DismissCaptureTutorial)}
+                        onclick_dismiss={send_event_factory(KiometUiEvent::DismissCaptureTutorial)}
                     />
                 } else if let TutorialAlert::Upgrade(tower_id) = tutorial_alert {
                     <Alert
@@ -77,7 +79,7 @@ pub fn alert_overlay(props: &AlertOverlayProps) -> Html {
                         hint={t.alert_upgrade_hint()}
                         icon_id={IconId::FontAwesomeSolidCircleArrowUp}
                         onclick={pan_to_factory(tower_id)}
-                        onclick_dismiss={send_event_factory(TowerUiEvent::DismissUpgradeTutorial)}
+                        onclick_dismiss={send_event_factory(KiometUiEvent::DismissUpgradeTutorial)}
                     />
                 }
             } else if *show_ruler_not_safe && props.alerts.flags().contains(AlertFlag::RulerNotSafe) {
@@ -124,8 +126,11 @@ pub fn alert_overlay(props: &AlertOverlayProps) -> Html {
 struct AlertProps {
     icon_id: IconId,
     instruction: AttrValue,
+    #[prop_or(None)]
     hint: Option<AttrValue>,
+    #[prop_or(None)]
     onclick: Option<Callback<MouseEvent>>,
+    #[prop_or(None)]
     onclick_dismiss: Option<Callback<MouseEvent>>,
 }
 
@@ -148,7 +153,7 @@ fn alert(props: &AlertProps) -> Html {
         "#
     );
 
-    let t = use_translation();
+    let t = use_translator();
 
     html! {
         <tr title={props.hint.clone()} class={classes!(props.onclick.is_some().then_some(clickable_css))}>

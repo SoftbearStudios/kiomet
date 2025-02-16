@@ -1,11 +1,10 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use crate::game::TowerGame;
-use client_util::context::Context;
-use core_protocol::PlayerId;
-use glam::Vec3;
-use renderer::{rgb_hex, rgba_array_to_css};
+use crate::game::KiometGame;
+use kodiak_client::glam::Vec3;
+use kodiak_client::renderer::{rgb_hex, rgba_array_to_css};
+use kodiak_client::{ClientContext, PlayerId};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u8)]
@@ -17,7 +16,7 @@ pub enum Color {
 }
 
 impl Color {
-    pub fn new(context: &Context<TowerGame>, player_id: Option<PlayerId>) -> Self {
+    pub fn new(context: &ClientContext<KiometGame>, player_id: Option<PlayerId>) -> Self {
         let Some(player_id) = player_id else {
             return Self::Gray;
         };

@@ -1,3 +1,5 @@
 target
 *.svg
+*.swp
 perf.*
+quests.log

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::chunk::{Chunk, ChunkId, RelativeTowerId};
@@ -9,9 +9,9 @@ use crate::tower::TowerType;
 use crate::unit::Unit;
 use crate::units::Units;
 use crate::world::Apply;
-use common_util::actor2::*;
-use core_protocol::id::PlayerId;
-use core_protocol::prelude::*;
+use kodiak_common::actor_model::*;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::{define_on, PlayerId, RankNumber};
 use std::num::NonZeroU8;
 
 /// A [`ChunkEvent`] with it's destination [`ChunkId`].
@@ -20,6 +20,7 @@ pub struct AddressedChunkEvent {
     pub event: ChunkEvent,
 }
 
+/*
 // TODO generic OnEvent trait.
 pub trait OnChunkEvent {
     fn on_chunk_event(&mut self, src: ChunkId, event: AddressedChunkEvent);
@@ -33,6 +34,7 @@ pub trait OnChunkEvent {
         }
     }
 }
+*/
 
 impl Tower {
     // TODO move?
@@ -97,6 +99,7 @@ pub enum ChunkInput {
     Spawn {
         tower_id: RelativeTowerId,
         player_id: PlayerId,
+        rank: Option<RankNumber>,
     },
     UpgradeTower {
         tower_id: RelativeTowerId,
@@ -106,8 +109,8 @@ pub enum ChunkInput {
 
 impl Message for ChunkInput {}
 
-impl<C: OnInfo + OnChunkEvent> Apply<ChunkInput, C> for Chunk {
-    fn apply(&mut self, u: &ChunkInput, context: &mut C) {
+impl Apply<ChunkInput, OnChunkEvent<'_, OnInfo<'_>>> for Chunk {
+    fn apply(&mut self, u: &ChunkInput, context: &mut OnChunkEvent<'_, OnInfo<'_>>) {
         match u.clone() {
             ChunkInput::AddInboundForce { tower_id, force } => {
                 self[tower_id].inbound_forces.push(force);
@@ -120,7 +123,9 @@ impl<C: OnInfo + OnChunkEvent> Apply<ChunkInput, C> for Chunk {
                 }
             }
             ChunkInput::DeployForce { tower_id, path } => {
-                context.on_chunk_events(self.chunk_id, self[tower_id].deploy_force(path));
+                for chunk_event in self[tower_id].deploy_force(path) {
+                    context.on_chunk_event(self.chunk_id, chunk_event.dst, chunk_event.event);
+                }
             }
             ChunkInput::Generate { tower_ids } => {
                 for tower_id in tower_ids {
@@ -131,6 +136,7 @@ impl<C: OnInfo + OnChunkEvent> Apply<ChunkInput, C> for Chunk {
             ChunkInput::Spawn {
                 tower_id,
                 player_id,
+                rank,
             } => {
                 let chunk_id = self.chunk_id;
                 let tower = &mut self[tower_id];
@@ -142,7 +148,7 @@ impl<C: OnInfo + OnChunkEvent> Apply<ChunkInput, C> for Chunk {
                 tower.units = Units::default();
                 tower.set_player_id(Some(player_id));
 
-                context.on_info(InfoEvent {
+                context(InfoEvent {
                     info: Info::GainedTower {
                         player_id,
                         tower_id,
@@ -158,16 +164,33 @@ impl<C: OnInfo + OnChunkEvent> Apply<ChunkInput, C> for Chunk {
                     .units
                     .add_to_tower(Unit::Shield, usize::MAX, tower.tower_type, false);
 
-                let mut soldiers = Units::default();
-                soldiers.add(Unit::Soldier, 4);
-                soldiers.add(Unit::Shield, 15);
-                for neighbor in tower_id.neighbors() {
-                    let force = Force::new(
-                        player_id,
-                        soldiers.clone(),
-                        Path::new(vec![tower_id, neighbor]),
+                for unit in [Unit::Soldier, Unit::Fighter] {
+                    let mut soldiers = Units::default();
+                    soldiers.add(
+                        unit,
+                        if unit == Unit::Fighter {
+                            2
+                        } else if rank >= Some(RankNumber::Rank2) {
+                            8
+                        } else {
+                            4
+                        },
                     );
-                    context.on_chunk_events(chunk_id, tower.send_force(force));
+                    soldiers.add(Unit::Shield, 15);
+                    for neighbor in tower_id.neighbors() {
+                        let force = Force::new(
+                            player_id,
+                            soldiers.clone(),
+                            Path::new(vec![tower_id, neighbor]),
+                        );
+                        for chunk_input in tower.send_force(force) {
+                            context.on_chunk_event(chunk_id, chunk_input.dst, chunk_input.event);
+                        }
+                    }
+                    if rank < Some(RankNumber::Rank5) {
+                        // Skip fighters.
+                        break;
+                    }
                 }
             }
             ChunkInput::UpgradeTower {
@@ -205,8 +228,9 @@ pub enum ChunkEvent {
 }
 
 impl Message for ChunkEvent {}
+define_on!(ChunkId, ChunkId, ChunkEvent);
 
-impl<C: OnInfo> Apply<ChunkEvent, C> for Chunk {
+impl<C: ?Sized> Apply<ChunkEvent, C> for Chunk {
     fn apply(&mut self, u: &ChunkEvent, _context: &mut C) {
         match u.clone() {
             ChunkEvent::AddInboundForce { tower_id, force } => {

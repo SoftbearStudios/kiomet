@@ -1,11 +1,11 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::enum_array::EnumArray;
 use crate::field::Field;
 use crate::tower::TowerType;
 use crate::world::World;
-use core_protocol::prelude::*;
+use kodiak_common::bitcode::{self, *};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::{EnumIter, IntoEnumIterator};
 
@@ -20,8 +20,6 @@ use strum::{EnumIter, IntoEnumIterator};
     PartialOrd,
     Hash,
     Debug,
-    Serialize,
-    Deserialize,
     Encode,
     Decode,
     EnumIter,
@@ -29,7 +27,6 @@ use strum::{EnumIter, IntoEnumIterator};
     TryFromPrimitive,
 )]
 #[repr(u8)]
-#[serde(into = "u8", try_from = "u8")]
 pub enum Unit {
     /// Shield is least flexible, so consume it first.
     /// Is [`Unit::FIRST_ALWAYS`] because it's the first unit that's always present.
@@ -252,7 +249,7 @@ impl Unit {
         self.is_mobile(None) && self != Self::Shield && !self.is_single_use()
     }
 
-    pub fn iter() -> impl Iterator<Item = Self> + DoubleEndedIterator + 'static {
+    pub fn iter() -> impl Iterator<Item = Self> + DoubleEndedIterator + Clone + 'static {
         <Self as IntoEnumIterator>::iter()
     }
 

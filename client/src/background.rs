@@ -1,17 +1,16 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::color::Color;
 use crate::finite_index::FiniteArena;
-use crate::game::{is_visible, TowerGame};
-use client_util::context::Context;
+use crate::game::{is_visible, KiometGame};
 use common::tower::{TowerId, TowerRectangle};
-use common_util::mask::Mask;
-use common_util::x_vec2::U16Vec2;
-use core_protocol::id::PlayerId;
-use glam::{uvec2, IVec2, UVec2, Vec2};
-use renderer::{DefaultRender, Layer, RenderLayer, Renderer, Shader, Texture, TextureFormat};
-use renderer2d::{BackgroundLayer, Camera2d, Invalidation};
+use kodiak_client::glam::{uvec2, IVec2, UVec2, Vec2};
+use kodiak_client::renderer::{
+    include_shader, DefaultRender, Layer, RenderLayer, Renderer, Shader, Texture, TextureFormat,
+};
+use kodiak_client::renderer2d::{BackgroundLayer, Camera2d, Invalidation};
+use kodiak_client::{ClientContext, Mask2d, PlayerId, U16Vec2};
 
 #[derive(Default, PartialEq)]
 struct TowerView {
@@ -63,7 +62,7 @@ pub struct TowerBackgroundLayer {
     #[layer]
     background: BackgroundLayer,
     invalidation: Option<Invalidation>,
-    index_arena: FiniteArena<u32>,
+    index_arena: FiniteArena<u16>,
     last_tower_data: Vec<u32>,
     last_view: TowerView,
     shader: Shader,
@@ -81,10 +80,7 @@ impl TowerBackgroundLayer {
             invalidation: Default::default(),
             last_tower_data: Default::default(),
             last_view: Default::default(),
-            shader: renderer.create_shader(
-                include_str!("./shader/background.vert"),
-                include_str!("./shader/background.frag"),
-            ),
+            shader: include_shader!(renderer, "background"),
             tower_texture,
         }
     }
@@ -93,7 +89,7 @@ impl TowerBackgroundLayer {
         &mut self,
         camera: Vec2,
         zoom: f32,
-        context: &Context<TowerGame>,
+        context: &ClientContext<KiometGame>,
         renderer: &Renderer,
     ) {
         let towers = &context.state.game.world.chunk;
@@ -199,7 +195,7 @@ impl TowerBackgroundLayer {
                 let dim = view.dim.into();
                 let offset: UVec2 = view.start().into();
                 self.invalidation = Some(Invalidation::Rects(
-                    Mask::new_expanded(updated_points, dim, 3)
+                    Mask2d::new_expanded(updated_points, dim, 3)
                         .take_rects()
                         .into_iter()
                         .map(|(start, end)| {

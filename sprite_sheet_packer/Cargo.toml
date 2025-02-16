@@ -1,9 +1,0 @@
-[package]
-name = "sprite_sheet_packer"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-sprite_sheet_util = {path="../engine/sprite_sheet_util"}

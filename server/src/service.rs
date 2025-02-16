@@ -1,112 +1,100 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::bot::TowerBot;
-use crate::regulator::Regulator;
-use atomic_refcell::AtomicRef;
 use common::alerts::{AlertFlag, Alerts};
 use common::chunk::{ChunkId, ChunkRectangle};
 use common::death_reason::DeathReason;
 use common::info::{GainedTowerReason, Info, InfoEvent, LostRulerReason};
 use common::player::Player;
-use common::protocol::{Command, Diff, NonActor, Update};
+use common::protocol::{Command, NonActor, Update};
 use common::singleton::SingletonId;
 use common::ticks::Ticks;
 use common::tower::{TowerArray, TowerId, TowerRectangle};
 use common::unit::Unit;
 use common::world::{Knowledge, Visibility, World, WorldChunks};
-use common_util::actor2::WorldTick;
-use common_util::storage::Map;
-use core_protocol::id::{GameId, PlayerId};
-use fxhash::FxHashSet;
-use game_server::context::Context;
-use game_server::game_service::GameArenaService;
-use game_server::player::{PlayerRepo, PlayerTuple};
-use log::warn;
+use common::KIOMET_CONSTANTS;
+use kodiak_server::actor_model::{Map, WorldTick};
+use kodiak_server::fxhash::FxHashSet;
+use kodiak_server::log::warn;
+use kodiak_server::{
+    ArenaContext, ArenaMap, ArenaService, GameConstants, Player as EnginePlayer, PlayerAlias,
+    PlayerId, Score,
+};
 use std::cmp::Ordering;
-use std::sync::Arc;
 use std::time::Duration;
 
 pub struct TowerService {
-    maybe_dead: FxHashSet<PlayerId>,
-    pub regulator: Regulator,
     pub world: World,
+    pub player_data: PlayerDatas,
+    maybe_dead: FxHashSet<PlayerId>,
 }
+
+pub type PlayerDatas = ArenaMap<PlayerId, PlayerData>;
 
 #[derive(Debug, Default)]
 pub struct ClientData {
     knowledge: Knowledge,
-    non_actor: NonActor,
     viewport: ChunkRectangle,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct PlayerData {
     pub alive: bool,
+    pub score: u32,
+    pub alias: PlayerAlias,
     pub towers: FxHashSet<TowerId>,
     /// Saturating counter of how long the player has lived.
     pub lifetime: Ticks,
-    /// Clamped to 255.
-    pub tower_counts: TowerArray<u8>,
+    /// Clamped to u8::MAX.
+    pub tower_counts: TowerArray<u16>,
     /// If dead, this is the reason why.
     pub death_reason: Option<DeathReason>,
     /// Cached alerts (some of which are used as persistent storage).
     pub(crate) alerts: Alerts,
 }
 
-impl GameArenaService for TowerService {
-    const GAME_ID: GameId = GameId::Kiomet;
+impl ArenaService for TowerService {
+    const GAME_CONSTANTS: &'static GameConstants = KIOMET_CONSTANTS;
     const TICK_PERIOD_SECS: f32 = Ticks::PERIOD_SECS;
-    const LIMBO: Duration = Duration::from_secs(12);
+    const LIMBO: Duration = Duration::from_secs(30);
     #[cfg(debug_assertions)]
-    const LEADERBOARD_MIN_PLAYERS: usize = 0;
+    const LEADERBOARD_MIN_PLAYERS: u32 = 0;
     #[cfg(not(debug_assertions))]
-    const LEADERBOARD_MIN_PLAYERS: usize = 5;
+    const LEADERBOARD_MIN_PLAYERS: u32 = 5;
     #[cfg(debug_assertions)]
     const LIVEBOARD_BOTS: bool = true;
+    const MAX_TEMPORARY_SERVERS: usize = 10;
     type Bot = TowerBot;
     type ClientData = ClientData;
     type GameUpdate = Update;
     type GameRequest = Command;
-    type PlayerData = PlayerData;
-    type PlayerExtension = ();
 
-    fn new(_: usize) -> Self {
+    fn new(_: &mut ArenaContext<Self>) -> Self {
         print!("Generating world...");
         let world = World::new(); // TODO Default?
         println!("done!");
 
         Self {
-            maybe_dead: Default::default(),
-            regulator: Default::default(),
             world,
+            player_data: Default::default(),
+            maybe_dead: Default::default(),
         }
     }
 
-    fn player_joined(
-        &mut self,
-        player_tuple: &Arc<PlayerTuple<Self>>,
-        _players: &PlayerRepo<Self>,
-    ) {
-        let player_id = player_tuple.borrow_player().player_id;
-        if self.regulator.join(player_id) {
-            self.world
-                .player
-                .insert(player_id, Player::default().into());
-        }
+    fn player_joined(&mut self, player_id: PlayerId, _player: &mut EnginePlayer<Self>) {
+        self.player_data.insert(player_id, PlayerData::default());
+        self.world
+            .player
+            .insert(player_id, Player::default().into());
     }
 
     fn player_command(
         &mut self,
         command: Self::GameRequest,
-        player_tuple: &Arc<PlayerTuple<Self>>,
-        players: &PlayerRepo<Self>,
+        player_id: PlayerId,
+        player: &mut EnginePlayer<Self>,
     ) -> Option<Self::GameUpdate> {
-        let player_id = player_tuple.borrow_player().player_id;
-        if !self.regulator.active(player_id) {
-            return None;
-        }
-
         fn wrap(path: &str) -> impl Fn(&str) -> String + '_ {
             move |e| format!("{path} resulted in {e}")
         }
@@ -116,10 +104,10 @@ impl GameArenaService for TowerService {
                 with,
                 break_alliance,
             } => self
-                .alliance(player_id, with, break_alliance, players)
+                .alliance(player_id, with, break_alliance)
                 .map_err(wrap("Alliance")),
             Command::DeployForce { tower_id, path } => self
-                .deploy_force(player_id, tower_id, path, players)
+                .deploy_force(player_id, tower_id, path)
                 .map_err(wrap("DeployForce")),
             Command::SetSupplyLine { tower_id, path } => {
                 if let Some(path) = path
@@ -145,65 +133,58 @@ impl GameArenaService for TowerService {
                     })
                     .cloned()
                 {
-                    self.deploy_force(player_id, tower_id, path, players)
+                    self.deploy_force(player_id, tower_id, path)
                         .map_err(wrap("SetSupplyLine/DeployForce"))?;
                 }
-                self.set_supply_line(player_id, tower_id, path, players)
+                self.set_supply_line(player_id, tower_id, path)
                     .map_err(wrap("SetSupplyLine"))
             }
-            Command::SetViewport(viewport) => {
-                let mut player = player_tuple.borrow_player_mut();
-                if let Some(client) = player.client_mut() {
-                    client.data_mut().viewport = viewport;
-                    Ok(())
-                } else {
-                    debug_assert!(false);
-                    Err("bots can't set viewport")
+            Command::SetViewport(viewport) => if let Some(client) = player.client_mut() {
+                if let Some(data) = client.data_mut() {
+                    data.viewport = viewport;
                 }
-                .map_err(wrap("SetViewport"))
+                Ok(())
+            } else {
+                debug_assert!(false);
+                Err("bots can't set viewport")
             }
-            Command::Spawn => self.spawn_player(player_id, players).map_err(wrap("Spawn")),
+            .map_err(wrap("SetViewport")),
+            Command::Spawn(alias) => self
+                .spawn_player(player_id, alias.sanitized(), player.rank())
+                .map_err(wrap("Spawn")),
             Command::Upgrade {
                 tower_id,
                 tower_type,
             } => self
-                .upgrade_tower(player_id, tower_id, tower_type, players)
+                .upgrade_tower(player_id, tower_id, tower_type)
                 .map_err(wrap("Upgrade")),
         })() {
-            if !player_tuple.borrow_player().is_bot() {
+            if !player.is_bot() {
                 warn!("{}", e);
             }
         }
         None
     }
 
-    fn player_left(&mut self, player_tuple: &Arc<PlayerTuple<Self>>, _: &PlayerRepo<Self>) {
-        let player_id = player_tuple.borrow_player().player_id;
-        self.regulator.leave(player_id);
-
+    fn player_quit(&mut self, player_id: PlayerId, _player: &mut EnginePlayer<Self>) {
         // Can't kill since we are in the ChunkInput phase and kill is ChunkMaintenance.
         self.maybe_dead.insert(player_id);
     }
 
+    fn player_left(&mut self, player_id: PlayerId, _player: &mut EnginePlayer<Self>) {
+        self.player_data.remove(player_id);
+        self.world.player.remove(player_id);
+    }
+
     fn get_game_update(
         &self,
-        player_tuple: &Arc<PlayerTuple<Self>>,
-        client_data: &mut Self::ClientData,
-        _players: &PlayerRepo<Self>,
+        player_id: PlayerId,
+        player: &mut EnginePlayer<Self>,
     ) -> Option<Self::GameUpdate> {
-        let player = player_tuple.borrow_player();
-        if !self.regulator.active(player.player_id) {
-            return None;
-        }
-        let admin = if let Some(client) = player.client() {
-            client.admin || cfg!(debug_assertions) /* || true */
-        } else {
-            debug_assert!(false);
-            false
-        };
-
-        let player_id = player.player_id;
-        let player = AtomicRef::map(player, |player| &player.data);
+        let client = player.inner.client_mut().unwrap();
+        let admin = client.admin() || cfg!(debug_assertions);
+        let client_data = client.data_mut()?;
+        let player = &self.player_data[player_id];
 
         let bounding_rectangle = if player.towers.is_empty() {
             let middle: ChunkId = World::CENTER.into();
@@ -282,34 +263,50 @@ impl GameArenaService for TowerService {
             alerts: player.alerts,
             bounding_rectangle,
         };
-        let non_actor_diff = client_data.non_actor.diff(&non_actor);
-        client_data.non_actor = non_actor;
 
         // Always send even if there are no events, for accurate time-keeping.
         Some(Update {
             actor_update,
-            non_actor_diff,
+            non_actor,
         })
     }
 
-    fn is_alive(&self, player_tuple: &Arc<PlayerTuple<Self>>) -> bool {
-        player_tuple.borrow_player().data.alive
+    fn is_alive(&self, player_id: PlayerId) -> bool {
+        self.player_data[player_id].alive
     }
 
-    fn tick(&mut self, context: &mut Context<Self>) {
-        for mut player_ref in context.players.iter_borrow_mut() {
-            let player = &mut *player_ref;
-            if player.data.alive {
+    fn get_alias(&self, player_id: PlayerId) -> PlayerAlias {
+        self.player_data[player_id].alias
+    }
+
+    fn override_alias(&mut self, player_id: PlayerId, alias: PlayerAlias) {
+        self.player_data[player_id].alias = alias;
+    }
+
+    fn get_score(&self, player_id: PlayerId) -> Score {
+        let player = &self.player_data[player_id];
+        if player.alive {
+            Score::Some(player.score)
+        } else {
+            Score::None
+        }
+    }
+
+    fn tick(&mut self, _context: &mut ArenaContext<Self>) {
+        let _counter = self.counter();
+        for (player_id, player) in self.player_data.iter_mut() {
+            if player.alive {
                 player.lifetime = player.lifetime.saturating_add(Ticks::ONE);
 
                 #[cfg(debug_assertions)]
-                if self.counter().every(Ticks::from_whole_secs(20))
-                    && matches!(player.alias().as_str(), "chonk" | "squonk")
+                if _counter.every(Ticks::from_whole_secs(20))
+                    && matches!(player.alias.as_str(), "chonk" | "squonk")
+                    && player.lifetime < Ticks::from_whole_secs(60)
                 {
                     use common::chunk::ChunkInput;
                     use common::force::{Force, Path};
 
-                    let alias = player.alias();
+                    let alias = player.alias;
                     let radius = if &*alias == "chonk" {
                         500 // Chonk is a giant circle about the size of Debased.
                     } else {
@@ -321,7 +318,7 @@ impl GameArenaService for TowerService {
                     for (tower_id, tower) in
                         self.world.chunk.iter_towers_circle(World::CENTER, radius)
                     {
-                        if tower.player_id == Some(player.player_id) {
+                        if tower.player_id == Some(player_id) {
                             continue;
                         }
                         let mut units = common::units::Units::default();
@@ -332,28 +329,27 @@ impl GameArenaService for TowerService {
                             src = src.connectivity_id().unwrap(); // We can't send from a tower to itself.
                         }
 
-                        let force =
-                            Force::new(player.player_id, units, Path::new(vec![src, tower_id]));
+                        let force = Force::new(player_id, units, Path::new(vec![src, tower_id]));
                         let (chunk_id, tower_id) = tower_id.split();
                         events.push((chunk_id, ChunkInput::AddInboundForce { tower_id, force }));
                     }
                     for (chunk_id, event) in events {
                         self.world
-                            .dispatch_chunk_input(chunk_id, event, |_| unreachable!());
+                            .dispatch_chunk_input(chunk_id, event, &mut |_| unreachable!());
                     }
                 }
 
-                if self.counter().every(Ticks::from_whole_secs(1)) {
-                    player.score = 0;
-                    let mut tower_counts: TowerArray<u8> = TowerArray::default();
+                if _counter.every(Ticks::from_whole_secs(1)) {
+                    let mut score = 0u32;
+                    let mut tower_counts: TowerArray<u16> = TowerArray::default();
 
-                    let alerts = &mut player.data.alerts;
+                    let alerts = &mut player.alerts;
                     alerts.reset_ephemeral();
                     let mut flags = alerts.flags();
 
                     // Assume ruler is not safe until proven otherwise.
                     flags |= AlertFlag::RulerNotSafe;
-                    for &tower_id in &player.data.towers {
+                    for &tower_id in &player.towers {
                         if let Some(tower) = self.world.chunk.get(tower_id) {
                             if tower.units.has_ruler() {
                                 alerts.ruler_position = Some(tower_id);
@@ -364,18 +360,18 @@ impl GameArenaService for TowerService {
                                         self.world
                                             .chunk
                                             .get(neighbor_id)
-                                            .map_or(true, |t| t.player_id == Some(player.player_id))
+                                            .map_or(true, |t| t.player_id == Some(player_id))
                                     }))
                                     && tower
                                         .inbound_forces
                                         .iter()
-                                        .all(|f| f.player_id == Some(player.player_id))
+                                        .all(|f| f.player_id == Some(player_id))
                                 {
                                     flags -= AlertFlag::RulerNotSafe;
                                 } else if tower
                                     .inbound_forces
                                     .iter()
-                                    .any(|f| f.player_id != Some(player.player_id))
+                                    .any(|f| f.player_id != Some(player_id))
                                 {
                                     flags |= AlertFlag::RulerUnderAttack;
                                 }
@@ -415,8 +411,7 @@ impl GameArenaService for TowerService {
                                 continue;
                             }
 
-                            player.score =
-                                player.score.saturating_add(tower.tower_type.score_weight());
+                            score = score.saturating_add(tower.tower_type.score_weight());
 
                             tower_counts[tower.tower_type] =
                                 tower_counts[tower.tower_type].saturating_add(1);
@@ -426,28 +421,19 @@ impl GameArenaService for TowerService {
                     }
 
                     alerts.set_flags(flags);
+                    player.score = score;
                     player.tower_counts = tower_counts;
                 }
             }
         }
 
         self.world
-            .tick_after_inputs(&mut Self::on_info_event(&context.players, |_| {
+            .tick_after_inputs(&mut Self::on_info_event(&mut self.player_data, |_, _| {
                 unreachable!("tick_after_inputs killed player")
             }));
-
-        self.regulator.tick(|player_id, joining| {
-            if joining {
-                self.world
-                    .player
-                    .insert(player_id, Player::default().into());
-            } else {
-                self.world.player.remove(&player_id);
-            }
-        });
     }
 
-    fn post_update(&mut self, context: &mut Context<Self>) {
+    fn post_update(&mut self, context: &mut ArenaContext<Self>) {
         self.world.post_update();
 
         // Boundary between old tick and new tick.
@@ -456,19 +442,24 @@ impl GameArenaService for TowerService {
         let mut maybe_dead = std::mem::take(&mut self.maybe_dead);
         for player_id in maybe_dead.drain() {
             // Makes `ChunkMaintenance`s which have to run before tick_before_inputs.
-            self.kill_player(player_id, &context.players);
+            self.kill_player(player_id);
         }
         self.maybe_dead = maybe_dead;
 
         if self.counter().next().every(Ticks::from_whole_secs(8)) {
             // Makes `ChunkMaintenance`s which have to run before tick_before_inputs.
-            self.shrink(&context.players);
+            self.shrink();
         }
 
-        self.world
-            .tick_before_inputs(&mut Self::on_info_event(&context.players, |player_id| {
-                self.maybe_dead.insert(player_id);
-            }));
+        self.world.tick_before_inputs(&mut Self::on_info_event(
+            &mut self.player_data,
+            |dead, killer| {
+                self.maybe_dead.insert(dead);
+                if let Some(killer) = killer {
+                    context.tally_victory(killer, dead);
+                }
+            },
+        ));
 
         /*
         for player_id in context.players.iter_player_ids() {
@@ -509,8 +500,9 @@ impl TowerService {
     }
 
     pub(crate) fn on_info_event<'a>(
-        players: &'a PlayerRepo<Self>,
-        mut maybe_dead: impl FnMut(PlayerId) + 'a,
+        players: &'a mut PlayerDatas,
+        // (dead, killer)
+        mut maybe_dead: impl FnMut(PlayerId, Option<PlayerId>) + 'a,
     ) -> impl FnMut(InfoEvent) + 'a {
         move |info_event| match info_event.info {
             Info::GainedTower {
@@ -518,7 +510,7 @@ impl TowerService {
                 player_id,
                 reason,
             } => {
-                if let Some(mut new_player) = players.borrow_player_mut(player_id) {
+                if let Some(new_player) = players.get_mut(player_id) {
                     if let GainedTowerReason::Spawned = reason {
                         debug_assert!(!new_player.alive, "spawning player should not be alive");
                         new_player.alive = true;
@@ -535,27 +527,21 @@ impl TowerService {
                 }
             }
             Info::LostRuler { player_id, reason } => {
-                let get_alias = |id: Option<PlayerId>| {
-                    id.and_then(|id| players.borrow_player(id).map(|p| p.alias()))
-                };
-
-                let mut player = players.borrow_player_mut(player_id).unwrap();
-                player.death_reason = match reason {
-                    LostRulerReason::KilledBy(attacker_player_id, unit) => {
-                        Some(DeathReason::RulerKilled {
-                            alias: get_alias(attacker_player_id),
-                            unit,
-                        })
-                    }
-                };
-                maybe_dead(player_id);
+                let LostRulerReason::KilledBy(attacker_player_id, unit) = reason;
+                let reason = Some(DeathReason::RulerKilled {
+                    alias: attacker_player_id.and_then(|id| players.get(id).map(|p| p.alias)),
+                    unit,
+                });
+                let player = players.get_mut(player_id).unwrap();
+                player.death_reason = reason;
+                maybe_dead(player_id, attacker_player_id);
             }
             Info::LostTower {
                 tower_id,
                 player_id,
                 reason: _,
             } => {
-                if let Some(mut old_player) = players.borrow_player_mut(player_id) {
+                if let Some(old_player) = players.get_mut(player_id) {
                     let removed = old_player.towers.remove(&tower_id);
                     debug_assert!(removed);
                 } else {

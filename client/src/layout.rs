@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use common::field::Field;
@@ -6,7 +6,7 @@ use common::force::Force;
 use common::tower::{Tower, TowerType};
 use common::unit::Unit;
 use common::units::Units;
-use glam::Vec2;
+use kodiak_client::glam::Vec2;
 use std::f32::consts::{PI, TAU};
 use std::iter;
 

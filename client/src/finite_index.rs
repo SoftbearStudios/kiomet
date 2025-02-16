@@ -1,7 +1,7 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use fxhash::FxHashMap;
+use kodiak_client::fxhash::FxHashMap;
 use std::hash::Hash;
 use std::ops::RangeInclusive;
 

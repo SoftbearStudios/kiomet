@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 Softbear, Inc.
+// SPDX-FileCopyrightText: 2024 Softbear, Inc.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::ticks::Ticks;
@@ -6,13 +6,13 @@ use crate::tower::{TowerId, TowerType};
 use crate::unit::{Speed, Unit};
 use crate::units::Units;
 use crate::world::{World, WorldChunks};
-use core_protocol::id::PlayerId;
-use core_protocol::prelude::*;
-use glam::Vec2;
+use kodiak_common::bitcode::{self, *};
+use kodiak_common::glam::Vec2;
+use kodiak_common::PlayerId;
 
 /// Represents a path that a force can take.
 /// TODO optimize to inline 8 bytes (3 bits per segment (19 segments) + 7 bits control).
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct Path {
     path: Vec<TowerId>, // In reverse order of input.
 }
@@ -116,7 +116,7 @@ impl Path {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Encode, Decode)]
 pub struct Force {
     /// Invariant: Always has at least two items, most likely source and destination.
     path: Path,
@@ -207,7 +207,10 @@ impl Force {
         supply_line: Option<&Path>,
     ) -> bool {
         if self.path.is_empty() || ally.is_some() {
-            if let Some(supply_line) = supply_line && tower_type.ranged_distance().is_none() && self.units.is_many() {
+            if let Some(supply_line) = supply_line
+                && tower_type.ranged_distance().is_none()
+                && self.units.is_many()
+            {
                 self.path = supply_line.clone();
                 if let Some(ally) = ally {
                     self.player_id = Some(ally);
@@ -359,7 +362,7 @@ mod tests {
     use crate::tower::TowerId;
     use crate::unit::{Speed, Unit};
     use crate::units::Units;
-    use core_protocol::id::PlayerId;
+    use kodiak_common::PlayerId;
 
     #[test]
     fn size_of() {

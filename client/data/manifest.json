@@ -1,0 +1,46 @@
+{
+  "name": "Kiomet",
+  "short_name": "Kiomet",
+  "description": "Kiomet is a multiplayer real-time strategy game. It is free to play online in a web browser with no install required. Start with a small country and expand into unclaimed areas. Make strategic alliances and join forces to defeat rivals. Protect the king at all times.",
+  "categories": [
+    "games"
+  ],
+  "background_color": "#273644",
+  "theme_color": "#273644",
+  "display": "standalone",
+  "orientation": "landscape",
+  "id": "/kiomet",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/data/512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/data/512x340.png",
+      "sizes": "512x340",
+      "type": "image/png"
+    },
+    {
+      "src": "/data/1280x720.png",
+      "sizes": "1280x720",
+      "type": "image/png"
+    },
+    {
+      "src": "/data/1920x1080.png",
+      "sizes": "1920x1080",
+      "type": "image/png"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/data/ss1920x1080.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ],
+  "handle_links": "not-preferred",
+  "ms_start_compatible": true
+}
