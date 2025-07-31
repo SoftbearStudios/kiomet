@@ -1,0 +1,8 @@
+[package]
+name = "third_party_client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wry = "0.52"
+tao = "0.34"
